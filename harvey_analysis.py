@@ -6,13 +6,13 @@ import pytz
 pd.options.mode.chained_assignment = None
 
 # <editor-fold desc="Merge data and progressively filter/clean Harvey dataset">
-tweets_harvey = ttk.merge(json_file='harvey_tweets.json', himn_file='harvey_irma_twitter_data.csv',
-                          missing_file='tweet_data_missing_forecast.csv')
+tweets_harvey = ttk.merge(json_file='Data\\harvey_tweets.json', himn_file='Data\\harvey_irma_twitter_data.csv',
+                          missing_file='Data\\tweet_data_missing_forecast.csv')
 
 col_order_df = pd.read_csv('col_order.csv')
 col_order = col_order_df['New Order'].tolist()
-tweets_harvey_calc = ttk.tweet_diffusion_calc(tweet_df=tweets_harvey, diff_folder='harvey_tweet_diffusion_files',
-                                              col_order=col_order, tweet_df_name='tweets_harvey_calc')
+tweets_harvey_calc = ttk.tweet_diffusion_calc(tweet_df=tweets_harvey, diff_folder='Data\\harvey_tweet_diffusion_files',
+                                              col_order=col_order, tweet_df_name='Data\\tweets_harvey_calc')
 
 tweets_harvey_final = ttk.image_filter(tweets_harvey_calc)
 tweets_harvey_final = ttk.scope_aff_filter(tweets_harvey_final, col_order=col_order, sep_exp=True)
