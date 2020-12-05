@@ -329,7 +329,7 @@ def merge(himn_file, json_file, fore_filter=True, rel_filter=True, scope_filter=
         missing_ids = missing_df['tweet-id'].astype(str).to_list()
 
         for tweet_id in missing_ids:
-            with open('harvey_tweet_diffusion_files\\' + tweet_id + '.json', 'r') as f:
+            with open('Data\\harvey_tweet_diffusion_files\\' + tweet_id + '.json', 'r') as f:
                 data = json.load(f)
 
                 if len(data) != 0:
@@ -411,18 +411,18 @@ def merge(himn_file, json_file, fore_filter=True, rel_filter=True, scope_filter=
     return tweets_harvey_final
 
 
-def tweet_diffusion_calc(tweet_df, diff_folder, col_order, tweet_df_name='tweets_harvey_calc'):
+def tweet_diffusion_calc(tweet_df, data_folder, diff_folder, col_order, tweet_df_name='tweets_harvey_calc'):
     # Calculates counts and rates for each diffusion metric (retweet, reply, and quote tweet) for several different
     # timeframes after the posting of the tweet. These calculated metrics are appended to a tweet dataframe as new
-    # columns. Required input: a dataframe with data for each tweet, a diffusion folder that contains diffusion data
-    # for each tweet as a seperate file, the column order that the calculated tweet_df should be ordered by, and a
-    # name to save the calculated tweet_df as (default is "tweets_harvey_calc").
+    # columns. Required input: a dataframe with data for each tweet, a data folder where data is stored and saved, a
+    # diffusion folder within the data folder that contains diffusion data for each tweet as a seperate file, the column
+    # order that the calculated tweet_df should be ordered by, and a name to save the calculated tweet_df as
+    # (default is "tweets_harvey_calc").
 
-    if ((tweet_df_name + '.csv') in os.listdir(os.curdir)) is True & ('diffusion-rt_rate_5m' in
-                                                                      pd.read_csv(
-                                                                          tweet_df_name + '.csv').columns) is True:
+    if ((tweet_df_name + '.csv') in os.listdir(data_folder)) is True & ('diffusion-rt_rate_5m' in
+                                                                   pd.read_csv(data_folder + '\\' + tweet_df_name + '.csv').columns) is True:
         print('columns already created')
-        return pd.read_csv(tweet_df_name + '.csv')
+        return pd.read_csv(data_folder + '\\' + tweet_df_name + '.csv')
 
     else:
         print('creating columns...')
@@ -438,9 +438,9 @@ def tweet_diffusion_calc(tweet_df, diff_folder, col_order, tweet_df_name='tweets
         # (this prevents reading in outliers and experimental watch/warning images if they have been removed
         # previously).
         n = 0
-        for filename in os.listdir(diff_folder):
+        for filename in os.listdir(data_folder + '\\' + diff_folder):
             if (filename[:18] in tweet_df.index) is True:
-                with open(diff_folder + '\\' + filename, 'r') as f:
+                with open(data_folder + '\\' + diff_folder + '\\' + filename, 'r') as f:
                     data = json.load(f)
 
                 # Convert data for each tweet-id in to a DataFrame (but only if tweet has any diffusion).
@@ -492,7 +492,7 @@ def tweet_diffusion_calc(tweet_df, diff_folder, col_order, tweet_df_name='tweets
                         tweet_df.loc[filename[:18], 'diffusion-' + metric + '_rate_' + str(time) + 'm'] = np.nan
 
             n += 1
-            print(str(n) + '/' + str(len(os.listdir(diff_folder))))
+            print(str(n) + '/' + str(len(os.listdir(data_folder + '\\' + diff_folder))))
 
         # Add or adjust column prefixes.
         old_cols = []
@@ -520,8 +520,8 @@ def tweet_diffusion_calc(tweet_df, diff_folder, col_order, tweet_df_name='tweets
         tweet_df.set_index('tweet-id', inplace=True)
 
         # Save the dataframe as a CSV and JSON file, using user-provided name.
-        tweet_df.to_csv(tweet_df_name + '.csv')
-        tweet_df.to_json(tweet_df_name + '.json')
+        tweet_df.to_csv(data_folder + '\\' + tweet_df_name + '.csv')
+        tweet_df.to_json(data_folder + '\\' + tweet_df_name + '.json')
 
         return tweet_df
 

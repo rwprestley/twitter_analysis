@@ -11,8 +11,8 @@ tweets_harvey = ttk.merge(json_file='Data\\harvey_tweets.json', himn_file='Data\
 
 col_order_df = pd.read_csv('col_order.csv')
 col_order = col_order_df['New Order'].tolist()
-tweets_harvey_calc = ttk.tweet_diffusion_calc(tweet_df=tweets_harvey, diff_folder='Data\\harvey_tweet_diffusion_files',
-                                              col_order=col_order, tweet_df_name='Data\\tweets_harvey_calc')
+tweets_harvey_calc = ttk.tweet_diffusion_calc(tweet_df=tweets_harvey, data_folder='Data', diff_folder='harvey_tweet_diffusion_files',
+                                              col_order=col_order, tweet_df_name='tweets_harvey_calc')
 
 tweets_harvey_final = ttk.image_filter(tweets_harvey_calc)
 tweets_harvey_final = ttk.scope_aff_filter(tweets_harvey_final, col_order=col_order, sep_exp=True)
@@ -70,4 +70,3 @@ lang_brand_cols = ['image-lang_english', 'image-lang_spanish', 'image-branding_o
 lang_brand_values = [1]
 
 # </editor-fold>
-
