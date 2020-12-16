@@ -35,6 +35,9 @@ else:
     coded = nmiss.loc[nmiss['hrisk_img'] != '']
     to_code = nmiss.loc[nmiss['hrisk_img'] == '']
 
+    print('Coding Progress: ' + str(len(coded)) + '/' + str(len(nmiss)) +
+          ' (' + '{:.2%}'.format(len(coded) / len(nmiss)) + ')')
+
 # For each tweet yet to be coded...
 for i in range(0, len(to_code)):
 
@@ -74,6 +77,14 @@ for i in range(0, len(to_code)):
 
     # Display coding progress.
     num_coded = len(nmiss.loc[nmiss['hrisk_img'] != ''])
+    yes_coded = len(nmiss.loc[nmiss['hrisk_img'] == 'yes'])
+    no_coded = len(nmiss.loc[nmiss['hrisk_img'] == 'no'])
+    na_coded = len(nmiss.loc[nmiss['hrisk_img'] == 'Not Available'])
     tot = len(nmiss)
     per_comp = '{:.2%}'.format(num_coded / tot)
+    per_yes = '{:.1%}'.format(yes_coded / num_coded)
+    per_no = '{:.1%}'.format(no_coded / num_coded)
+    per_na = '{:.1%}'.format(na_coded / num_coded)
     print('Risk Image Coding Completed: ' + str(num_coded) + '/' + str(tot) + ' (' + str(per_comp) + ')')
+    print(str(yes_coded) + ' yes (' + str(per_yes) + '), ' + str(no_coded) + ' no (' + str(per_no) + '), ' +
+          str(na_coded) + ' n/a (' + str(per_na) + ')\n')
