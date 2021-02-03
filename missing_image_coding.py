@@ -1,6 +1,6 @@
 import numpy as np
 import pandas as pd
-from .tweet_coding.tweet_coding import risk_image_coding, rel_fore_coding, image_coding
+from tweet_coding.tweet_coding import risk_image_coding, rel_fore_coding, image_coding
 pd.options.mode.chained_assignment = None
 
 # Read in file and folder where coded data is stored.
