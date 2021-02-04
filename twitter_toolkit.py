@@ -160,12 +160,14 @@ def merge(himn_file, json_file, fore_filter=True, rel_filter=True, scope_filter=
 
     # HIMN ------------------------------------------------------------------------------------------------------------#
     himn_df.drop(columns=['concat_key', 'concat_key.1', 'rel_X_fore_Harvey', 'threat_sum', 'type_sum', 'type_WW_RS',
-                          'type_WW_text'], inplace=True)
+                          'type_WW_text', 'time_Irma', 'rel_Irma', 'fore_Irma'], inplace=True)
 
     himn_diffusion_cols_keep = ['diffusion-combined_rt_qt_count', 'diffusion-qt_count', 'diffusion-reply_count',
                                 'diffusion-retweet_count']
     for col in himn_df.columns:
         if (col[:9] == 'diffusion') & ((col in himn_diffusion_cols_keep) is False):
+            himn_df.drop(columns=col, inplace=True)
+        if col[:6] == 'threat':
             himn_df.drop(columns=col, inplace=True)
 
     # JSON ------------------------------------------------------------------------------------------------------------#
@@ -180,10 +182,10 @@ def merge(himn_file, json_file, fore_filter=True, rel_filter=True, scope_filter=
 
     # Manually change image name types to change source to branding and replace second underscores with hyphens. Also
     # change diffusion-retweet column to diffusion-rt.
-    old_cols = ['source_off', 'source_non-off', 'type_key_msg', 'type_WW_md', 'type_threat_impact', 'type_conv_out',
+    old_cols = ['source_off', 'source_non-off', 'type_key_msg', 'type_threat_impact', 'type_conv_out',
                 'type_meso_disc', 'type_rain_fore', 'type_rain_out', 'type_riv_flood', 'type_other_fore',
                 'type_other_non-fore', 'threat_trop_gen', 'threat_rain_flood', 'diffusion-retweet_count']
-    new_cols = ['branding_off', 'branding_unoff', 'type_key-msg', 'type_WW_meso-disc', 'type_threat-impact',
+    new_cols = ['branding_off', 'branding_unoff', 'type_key-msg', 'type_threat-impact',
                 'type_conv-out', 'type_meso-disc', 'type_rain-fore', 'type_rain-out', 'type_riv-flood',
                 'type_other-fore', 'type_other-non-fore', 'threat_trop-gen', 'threat_rain-flood',
                 'diffusion-rt_count']
@@ -246,6 +248,16 @@ def merge(himn_file, json_file, fore_filter=True, rel_filter=True, scope_filter=
     # Create a code for video based on the media type column.
     himn_df['image-type_video'] = [1 if x == 'video' else 0 for x in himn_df['media-type']]
 
+    # Merge JSON tweet-ids with HIMN data in order to have full tweet-ids for all tweets
+    himn_df = pd.merge(himn_df, json_data_df[['tweet-id', 'tweet-id_trunc']], on='tweet-id_trunc', how='left',
+                       suffixes=('_y', ''))
+    himn_df.drop(himn_df.filter(regex='_y$').columns.tolist(), axis=1, inplace=True)
+
+    # Convert created_at column to format that matches missing and JSON datasets
+    himn_df['tweet-created_at'] = pd.to_datetime(himn_df['tweet-created_at'], infer_datetime_format=True)
+    himn_df['tweet-created_at'] = himn_df['tweet-created_at'].dt.tz_localize('UTC')
+    himn_df['tweet-created_at'] = himn_df['tweet-created_at'].dt.strftime('%Y-%m-%d %H:%M:%S%z')
+
     # -----------------------------------------------------------------------------------------------------------------#
     # DATA FILTERING --------------------------------------------------------------------------------------------------#
     # -----------------------------------------------------------------------------------------------------------------#
@@ -269,37 +281,52 @@ def merge(himn_file, json_file, fore_filter=True, rel_filter=True, scope_filter=
         # DATA INPUT --------------------------------------------------------------------------------------------------#
         # -------------------------------------------------------------------------------------------------------------#
 
-        # Read in missing data (created via image coding py file).
-        missing_df = pd.read_csv(missing_file)
+        # Read in missing data (created via image coding package).
+        missing_df = pd.read_csv(missing_file, encoding='UTF-8')
 
         # -------------------------------------------------------------------------------------------------------------#
         # REMOVE EXTRANEOUS COLUMNS -----------------------------------------------------------------------------------#
         # -------------------------------------------------------------------------------------------------------------#
-        missing_df.drop(columns=json_drop_cols, inplace=True)
-        missing_df.drop(columns=['url_count', 'media_url1', 'media_url2', 'media_url3'], inplace=True)
+        missing_drop_cols = ['geolocation', 'user.account_created_at', 'link', 'hrisk_img', 'image_count']
+        missing_df.drop(columns=missing_drop_cols, inplace=True)
+
+        for col in missing_df.columns:
+            if col[:7] == 'Unnamed':
+                missing_df.drop(col, axis=1, inplace=True)
 
         # -------------------------------------------------------------------------------------------------------------#
         # RENAME COLUMNS ----------------------------------------------------------------------------------------------#
         # -------------------------------------------------------------------------------------------------------------#
 
-        # Rename JSON created-at column, source/branding columns, and user columns.
-        missing_df.rename(columns={'source_off': 'branding_off', 'source_unoff': 'branding_unoff',
-                                   'created_at.$date': 'created_at'}, inplace=True)
+        # Rename missing user columns.
         missing_df.columns = missing_df.columns.str.replace('.', '-')
 
-        # Add or adjust column prefixes.
-        old_cols = []
+        # Add column prefixes and map 'yes'/'no' to 1/0.
+        image_cols = ['trop-out', 'cone', 'arrival', 'prob', 'surge', 'key-msg', 'ww', 'threat-impact', 'conv-out',
+                      'meso-disc', 'rain-fore', 'rain-out', 'riv-flood', 'spag', 'text-img', 'model', 'evac',
+                      'other-fore', 'other-non-fore', 'video']
+        ww_cols = ['ww_exp', 'ww_cone', 'ww_md']
+        other_cols = ['official', 'unofficial', 'spanish', 'forecast', 'relevant']
+
         new_cols = []
         for col in missing_df.columns:
-            if col[:4] == 'bran' or col[:4] == 'lang' or col[:4] == 'type' or col[:4] == 'thre':
-                old_cols.append(col)
-                new_cols.append('image-' + col)
-            if (col in json_tweet_cols) is True:
-                old_cols.append(col)
-                new_cols.append('tweet-' + col)
+            if col in image_cols:
+                new_cols.append('image-type_' + col)
+                missing_df[col] = missing_df[col].map({'yes': 1, 'no': 0})
+            if col in ww_cols:
+                new_cols.append('image-type_' + col)
+                missing_df[col] = missing_df[col].map({'yes': 1, 'no': 0})
+            if col in other_cols:
+                missing_df[col] = missing_df[col].map({'yes': 1, 'no': 0})
 
-        new_cols = [col.lower() for col in new_cols]
-        missing_df.rename(columns=dict(zip(old_cols, new_cols)), inplace=True)
+        missing_df.rename(columns=dict(zip(image_cols + ww_cols, new_cols)), inplace=True)
+
+        # Rename other columns
+        missing_df.rename(columns={'image-type_text-img': 'image-type_text', 'official': 'image-branding_off',
+                                   'unofficial': 'image-branding_unoff', 'spanish': 'image-lang_spanish',
+                                   'forecast': 'tweet-fore_harvey', 'relevant': 'tweet-rel_harvey',
+                                   'tweet_type': 'tweet-type', 'text': 'tweet-text', 'created_at': 'tweet-created_at',
+                                   'id': 'tweet-id'}, inplace=True)
 
         # -------------------------------------------------------------------------------------------------------------#
         # CALCULATE NEW COLUMNS ---------------------------------------------------------------------------------------#
@@ -308,18 +335,12 @@ def merge(himn_file, json_file, fore_filter=True, rel_filter=True, scope_filter=
         # Create truncated id column.
         missing_df['tweet-id_trunc'] = missing_df['tweet-id'].astype(str).str[:15]
 
-        # Create and/or edit tweet type, media URL, and media type columns.
-        missing_df = tweet_type_convert(missing_df)
+        # Create and/or edit media URL and media type columns.
         missing_df = media_url_convert(missing_df)
         missing_df = media_type_convert(missing_df)
 
-        # Create time, relevance, and forecast columns for Harvey and Irma.
+        # Create time column for Harvey
         missing_df['tweet-time_harvey'] = 1
-        missing_df['tweet-rel_harvey'] = 1
-        missing_df['tweet-fore_harvey'] = 1
-        missing_df['tweet-time_irma'] = np.nan
-        missing_df['tweet-rel_irma'] = np.nan
-        missing_df['tweet-fore_irma'] = np.nan
 
         # Calculate diffusion metrics.
         missing_rt = []
@@ -329,21 +350,28 @@ def merge(himn_file, json_file, fore_filter=True, rel_filter=True, scope_filter=
         missing_ids = missing_df['tweet-id'].astype(str).to_list()
 
         for tweet_id in missing_ids:
-            with open('Data\\harvey_tweet_diffusion_files\\' + tweet_id + '.json', 'r') as f:
-                data = json.load(f)
+            filename = tweet_id + '.json'
+            direc = 'Data\\harvey_tweet_diffusion_files'
+            if filename in direc:
+                with open('Data\\harvey_tweet_diffusion_files\\' + tweet_id + '.json', 'r') as f:
+                    data = json.load(f)
 
-                if len(data) != 0:
-                    # Convert data for each tweet-id in to a DataFrame (but only if tweet has any diffusion).
-                    data_df = pd.json_normalize(data)
+                    if len(data) != 0:
+                        # Convert data for each tweet-id in to a DataFrame (but only if tweet has any diffusion).
+                        data_df = pd.json_normalize(data)
 
-                    missing_rt.append(len(data_df.loc[data_df['tweet_types.retweet'] != 0]))
-                    missing_qt.append(len(data_df.loc[data_df['tweet_types.quote_tweet'] != 0]))
-                    missing_reply.append(len(data_df.loc[data_df['tweet_types.reply'] != 0]))
+                        missing_rt.append(len(data_df.loc[data_df['tweet_types.retweet'] != 0]))
+                        missing_qt.append(len(data_df.loc[data_df['tweet_types.quote_tweet'] != 0]))
+                        missing_reply.append(len(data_df.loc[data_df['tweet_types.reply'] != 0]))
 
-                else:
-                    missing_rt.append(0)
-                    missing_qt.append(0)
-                    missing_reply.append(0)
+                    else:
+                        missing_rt.append(0)
+                        missing_qt.append(0)
+                        missing_reply.append(0)
+            else:
+                missing_rt.append(0)
+                missing_qt.append(0)
+                missing_reply.append(0)
 
         missing_df['diffusion-qt_count'] = missing_qt
         missing_df['diffusion-reply_count'] = missing_reply
@@ -351,12 +379,19 @@ def merge(himn_file, json_file, fore_filter=True, rel_filter=True, scope_filter=
         missing_df['diffusion-combined_rt_qt_count'] = missing_df['diffusion-rt_count'] + \
             missing_df['diffusion-qt_count']
 
+        # Convert created_at column to format that matches HIMN and JSON datasets
+        missing_df['tweet-created_at'] = pd.to_datetime(missing_df['tweet-created_at'], infer_datetime_format=True)
+        missing_df['tweet-created_at'] = missing_df['tweet-created_at'].dt.strftime('%Y-%m-%d %H:%M:%S%z')
+
+        # Create a code for video based on the media type column.
+        missing_df['image-type_video'] = [1 if x == 'video' else 0 for x in missing_df['media-type']]
+
         # -------------------------------------------------------------------------------------------------------------#
         # INPUT NEW COLUMNS FROM MERGE --------------------------------------------------------------------------------#
         # -------------------------------------------------------------------------------------------------------------#
 
         # Merge missing data with originator data to include coded originator data.
-        final_originator_codes = pd.read_csv('final_originator_codes.csv')
+        final_originator_codes = pd.read_csv('origs_missing_coded.csv')
         final_originator_codes.rename(
             columns={'Originator': 'user-screen_name', 'Scope': 'user-scope', 'Agency': 'user-agency',
                      'Affiliation': 'user-affiliation'}, inplace=True)
@@ -367,46 +402,30 @@ def merge(himn_file, json_file, fore_filter=True, rel_filter=True, scope_filter=
         missing_df = pd.merge(missing_df, final_originator_codes.iloc[:, 0:4], on='user-screen_name', how='left')
 
         # Concatenate missing data with HIMN data to obtain a full set of coded data.
-        himn_df = pd.concat([himn_df, missing_df], join='outer')
+        tweets_harvey_final = pd.concat([himn_df, missing_df], join='outer')
 
     # Count the number of duplicates in the tweet-id_trunc columns of the dataframes to be merged.
-    dup_ids_himn = himn_df.duplicated('tweet-id_trunc')
-    dup_ids_json = json_data_df.duplicated('tweet-id_trunc')
-    dup_count_himn = sum(dup_ids_himn)
-    dup_count_json = sum(dup_ids_json)
-    dup_count_tot = dup_count_himn + dup_count_json
+    dup_df = pd.DataFrame()
+    dup_df['himn_dup'] = tweets_harvey_final.duplicated('tweet-id_trunc')
+    dup_df['json_dup'] = json_data_df.duplicated('tweet-id_trunc')
+    dup_count_tot = len(dup_df.loc[(dup_df['himn_dup'] == True) | (dup_df['json_dup'] == True)])
+    print('Duplicates removed: ' + str(dup_count_tot))
 
-    # If there are duplicates in the tweet-id_trunc column, return a value error. Otherwise, continue with the merge.
-    if dup_count_tot == 0:
+    # Drop any duplicates
+    tweets_harvey_final.drop_duplicates('tweet-id_trunc', inplace=True)
+    json_data_df.drop_duplicates('tweet-id_trunc', inplace=True)
 
-        # Merge JSON data with CSV/HIMN or combined CSV/HIMN and missing data to form a full, final dataset. Join on the
-        # truncated id column. Include all columns in each dataframe, denoting duplicates with the suffix '_y'. Remove
-        # any duplicates by dropping columns with the '_y' suffix.
-        tweets_harvey_final = pd.merge(json_data_df, himn_df, on='tweet-id_trunc', how='outer',
-                                       suffixes=('', '_y'))
-        tweets_harvey_final.drop(tweets_harvey_final.filter(regex='_y$').columns.tolist(), axis=1, inplace=True)
+    # Replace empty values with zeros in numeric columns.
+    numeric_columns = himn_df.select_dtypes(include=['number']).columns
+    tweets_harvey_final[numeric_columns] = tweets_harvey_final[numeric_columns].fillna(0)
 
-        # Convert the tweet created at column to local/US Central time.
-        tweets_harvey_final['tweet-created_at'] = pd.to_datetime(tweets_harvey_final['tweet-created_at'],
-                                                                 format='%Y-%m-%dT%H:%M:%SZ')
-        tweets_harvey_final['tweet-created_at'] = tweets_harvey_final['tweet-created_at'].dt.tz_localize(
-            tz='UTC').dt. \
-            tz_convert(tz='US/Central')
+    # Create an English language column to complement the Spanish language column.
+    tweets_harvey_final.loc[tweets_harvey_final['image-lang_spanish'] == 1, 'image-lang_english'] = 0
+    tweets_harvey_final.loc[tweets_harvey_final['image-lang_spanish'] == 0, 'image-lang_english'] = 1
 
-        # Replace empty values with zeros in numeric columns.
-        numeric_columns = tweets_harvey_final.select_dtypes(include=['number']).columns
-        tweets_harvey_final[numeric_columns] = tweets_harvey_final[numeric_columns].fillna(0)
-
-        # Create an English language column to complement the Spanish language column.
-        tweets_harvey_final.loc[tweets_harvey_final['image-lang_spanish'] == 1, 'image-lang_english'] = 0
-        tweets_harvey_final.loc[tweets_harvey_final['image-lang_spanish'] == 0, 'image-lang_english'] = 1
-
-        # Create a tweet URL column by splitting the last 23 digits from the tweet text column.
-        tweets_harvey_final['tweet-url'] = tweets_harvey_final['tweet-text'].str.slice(start=-23)
-        tweets_harvey_final['tweet-text'] = tweets_harvey_final['tweet-text'].str.slice(stop=-23)
-
-    else:
-        raise ValueError("Dataframes can not be merged if they contain duplicate tweet-id_trunc values")
+    # Create a tweet URL column by splitting the last 23 digits from the tweet text column.
+    tweets_harvey_final['tweet-url'] = tweets_harvey_final['tweet-text'].str.slice(start=-23)
+    tweets_harvey_final['tweet-text'] = tweets_harvey_final['tweet-text'].str.slice(stop=-23)
 
     return tweets_harvey_final
 
