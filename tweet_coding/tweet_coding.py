@@ -6,7 +6,7 @@ all_out = ['yes', 'yes', 'yes', 'yes', 'yes', 'no', 'no', 'no', 'no', 'no', 'Not
            'Not Available', '', 'Not Available']
 
 
-def risk_image_coding(cfile, dfile, direc, ctype, codecols):
+def risk_image_coding(cfile, dfile, direc, ctype, codecols, datecol):
     """
     Code tweets for hurricane risk imagery
 
@@ -16,9 +16,11 @@ def risk_image_coding(cfile, dfile, direc, ctype, codecols):
         direc:
         ctype:
         codecols:
+        datecol: A text string denoting the Pandas column name of the data to be saved that represents the date and
+                         time
     """
     # Read and parse Twitter data
-    coded, to_code = readdata(cfile, dfile, direc, ctype, codecols)
+    coded, to_code = readdata(cfile, dfile, direc, ctype, codecols, datecol)
 
     # For each uncoded tweet...
     for i in range(0, len(to_code)):
@@ -36,13 +38,13 @@ def risk_image_coding(cfile, dfile, direc, ctype, codecols):
         to_code = map_input(to_code, codecols, all_in, all_out)
 
         # Save the updated coded file after each tweet is coded.
-        tweetdata = save_coding(coded, to_code, cfile, direc)
+        tweetdata = save_coding(coded, to_code, cfile, direc, datecol)
 
         # Display coding progress.
         display_progress(tweetdata, codecols, ctype, ['yes', 'no', 'Not Available'])
 
 
-def rel_fore_coding(cfile, dfile, direc, ctype, codecols):
+def rel_fore_coding(cfile, dfile, direc, ctype, codecols, datecol):
     """
     Code tweets for relevant, forecast information
 
@@ -52,9 +54,11 @@ def rel_fore_coding(cfile, dfile, direc, ctype, codecols):
         direc:
         ctype:
         codecols:
+        datecol: A text string denoting the Pandas column name of the data to be saved that represents the date and
+                         time
     """
     # Read and parse Twitter data
-    coded, to_code = readdata(cfile, dfile, direc, ctype, codecols, select_col='hrisk_img',
+    coded, to_code = readdata(cfile, dfile, direc, ctype, codecols, datecol, select_col='hrisk_img',
                                             select_crit='yes')
 
     # For each tweet yet to be coded...
@@ -75,13 +79,13 @@ def rel_fore_coding(cfile, dfile, direc, ctype, codecols):
         to_code = map_input(to_code, codecols, all_in, all_out)
 
         # Save the updated coded file after each tweet is coded.
-        tweetdata = save_coding(coded, to_code, cfile, direc)
+        tweetdata = save_coding(coded, to_code, cfile, direc, datecol)
 
         # Display coding progress.
         display_progress(tweetdata, codecols, ctype, ['yes', 'no', 'Not Available'])
 
 
-def image_coding(cfile, dfile, direc, ctype):
+def image_coding(cfile, dfile, direc, ctype, datecol):
     """
      Code tweets based on their image content
 
@@ -90,6 +94,8 @@ def image_coding(cfile, dfile, direc, ctype):
          dfile:
          direc:
          ctype:
+         datecol: A text string denoting the Pandas column name of the data to be saved that represents the date and
+                         time
      """
     # Define column names for each image code.
     image_cols = ['trop-out', 'cone', 'arrival', 'prob', 'surge', 'key-msg', 'ww', 'threat-impact', 'conv-out',
@@ -100,7 +106,7 @@ def image_coding(cfile, dfile, direc, ctype):
     all_cols = image_cols + ww_cols + other_cols
 
     # Read and parse Twitter data
-    coded, to_code = readdata(cfile, dfile, direc, ctype, all_cols, select_col='forecast',
+    coded, to_code = readdata(cfile, dfile, direc, ctype, all_cols, datecol, select_col='forecast',
                                             select_crit='yes')
 
     # For each tweet yet to be coded...
@@ -145,7 +151,49 @@ def image_coding(cfile, dfile, direc, ctype):
         to_code = map_input(to_code, all_cols, all_in, all_out)
 
         # Save the updated coded file after each tweet is coded.
-        tweetdata = save_coding(coded, to_code, cfile, direc)
+        tweetdata = save_coding(coded, to_code, cfile, direc, datecol)
 
         # Display coding progress.
         display_progress(tweetdata, all_cols, ctype, ['yes'])
+
+
+def md_coding(cfile, dfile, direc, ctype, codecols, datecol):
+    """
+       Code mesoscale discussion tweets into SPC and WPC versions
+
+       Parameters:
+           cfile: A text string denoting what the coded data should be saved as
+           dfile: A text string denoting the existing data that should be coded
+           direc: A text string denoting the directory that the existing data and newly coded data should be saved in
+           ctype: A text string denoting the type of coding being done (e.g. 'Risk image', 'Relevance and forecast').
+                      First letter should be capitalized.
+           codecols: A list of strings, where each string represents a column where coded data is stored
+           datecol: A text string denoting the Pandas column name of the data to be saved that represents the date and
+                         time
+       """
+    # Read and parse Twitter data
+    coded, to_code = readdata(cfile, dfile, direc, ctype, codecols, datecol, select_col='image-type_meso-disc',
+                              select_crit=1)
+
+    # For each tweet yet to be coded...
+    for i in range(0, len(to_code)):
+        # Display each tweet in an incognito Chrome tab
+        display_tweet(to_code['tweet-url'].iloc[i])
+
+        # Code the tweets for relevance and forecast information
+        spc_in = code_tweet('Is this mesoscale discussion provided by the SPC?', all_in)
+        wpc_in = code_tweet('Is this mesoscale discussion provided by the WPC?', all_in)
+
+        # Add coded input value to dataframe
+        to_code['image-type_meso-disc_spc'].iloc[i] = spc_in
+        to_code['image-type_meso-disc_wpc'].iloc[i] = wpc_in
+
+        # Map various inputs to either 'yes', 'no', or 'Not Available' (for tweets that don't display in browswer
+        # because they were deleted).
+        to_code = map_input(to_code, codecols, all_in, all_out)
+
+        # Save the updated coded file after each tweet is coded.
+        tweetdata = save_coding(coded, to_code, cfile, direc, datecol)
+
+        # Display coding progress.
+        display_progress(tweetdata, codecols, ctype, ['yes'])
