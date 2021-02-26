@@ -11,6 +11,7 @@ from scipy import stats
 import json
 import os
 import webbrowser
+import plotly.graph_objects as go
 
 
 # <editor-fold desc="Data merging and filtering">
@@ -258,6 +259,43 @@ def merge(himn_file, json_file, fore_filter=True, rel_filter=True, scope_filter=
     himn_df['tweet-created_at'] = himn_df['tweet-created_at'].dt.tz_localize('UTC')
     himn_df['tweet-created_at'] = himn_df['tweet-created_at'].dt.strftime('%Y-%m-%d %H:%M:%S%z')
 
+    # Calculate diffusion metrics.
+    himn_rt = []
+    himn_reply = []
+    himn_qt = []
+
+    missing_ids = himn_df['tweet-id'].astype(str).to_list()
+
+    for tweet_id in missing_ids:
+        filename = tweet_id + '.json'
+        direc = 'Data\\harvey_tweet_diffusion_files'
+        if filename in os.listdir(direc):
+            with open(direc + '\\' + filename, 'r') as f:
+                data = json.load(f)
+
+                if len(data) != 0:
+                    # Convert data for each tweet-id in to a DataFrame (but only if tweet has any diffusion).
+                    data_df = pd.json_normalize(data)
+
+                    himn_rt.append(len(data_df.loc[data_df['tweet_types.retweet'] != 0]))
+                    himn_qt.append(len(data_df.loc[data_df['tweet_types.quote_tweet'] != 0]))
+                    himn_reply.append(len(data_df.loc[data_df['tweet_types.reply'] != 0]))
+
+                else:
+                    himn_rt.append(0)
+                    himn_qt.append(0)
+                    himn_reply.append(0)
+        else:
+            himn_rt.append(0)
+            himn_qt.append(0)
+            himn_reply.append(0)
+
+    himn_df['diffusion-qt_count'] = himn_qt
+    himn_df['diffusion-reply_count'] = himn_reply
+    himn_df['diffusion-rt_count'] = himn_rt
+    himn_df['diffusion-combined_rt_qt_count'] = himn_df['diffusion-rt_count'] + \
+                                                   himn_df['diffusion-qt_count']
+
     # -----------------------------------------------------------------------------------------------------------------#
     # DATA FILTERING --------------------------------------------------------------------------------------------------#
     # -----------------------------------------------------------------------------------------------------------------#
@@ -287,7 +325,7 @@ def merge(himn_file, json_file, fore_filter=True, rel_filter=True, scope_filter=
         # -------------------------------------------------------------------------------------------------------------#
         # REMOVE EXTRANEOUS COLUMNS -----------------------------------------------------------------------------------#
         # -------------------------------------------------------------------------------------------------------------#
-        missing_drop_cols = ['geolocation', 'user.account_created_at', 'link', 'hrisk_img', 'image_count']
+        missing_drop_cols = ['geolocation', 'user.account_created_at', 'link', 'hrisk_img', 'image_count', 'id.trunc']
         missing_df.drop(columns=missing_drop_cols, inplace=True)
 
         for col in missing_df.columns:
@@ -352,8 +390,8 @@ def merge(himn_file, json_file, fore_filter=True, rel_filter=True, scope_filter=
         for tweet_id in missing_ids:
             filename = tweet_id + '.json'
             direc = 'Data\\harvey_tweet_diffusion_files'
-            if filename in direc:
-                with open('Data\\harvey_tweet_diffusion_files\\' + tweet_id + '.json', 'r') as f:
+            if filename in os.listdir(direc):
+                with open(direc + '\\' + filename, 'r') as f:
                     data = json.load(f)
 
                     if len(data) != 0:
@@ -385,6 +423,11 @@ def merge(himn_file, json_file, fore_filter=True, rel_filter=True, scope_filter=
 
         # Create a code for video based on the media type column.
         missing_df['image-type_video'] = [1 if x == 'video' else 0 for x in missing_df['media-type']]
+
+        # Remove overlaps when video is coded.
+        for col in missing_df.columns:
+            if (col[:10] == 'image-type') & (col != 'image-type_video'):
+                missing_df.loc[missing_df['image-type_video'] == 1, col] = 0
 
         # -------------------------------------------------------------------------------------------------------------#
         # INPUT NEW COLUMNS FROM MERGE --------------------------------------------------------------------------------#
@@ -557,7 +600,9 @@ def scope_aff_filter(df, col_order, sep_exp=False):
     df['user-scope'].replace(to_replace=scope_merge, inplace=True)
 
     # Rename affiliation values for clarity.
-    replace_dict = {'Gov - Wx - NWS': 'NWS', 'Media - Wx': 'Wx Media', 'Media - News': 'News Media'}
+    replace_dict = {'Gov - Wx - NWS': 'NWS', 'Media - Wx': 'Wx Media', 'Media - News': 'News Media',
+                    'Gov - Wx - Non-NWS': 'Non-NWS Wx Gov', 'Gov - EM': 'EM', 'Gov - Other': 'Other Gov',
+                    'Other - Wx': 'Other Wx', 'Other - Non-Wx': 'Other Non-Wx'}
     df['user-affiliation'].replace(replace_dict, inplace=True)
 
     # Create binary columns for local and national tweets.
@@ -569,12 +614,12 @@ def scope_aff_filter(df, col_order, sep_exp=False):
     df.loc[df['user-agency'] == 'Organization', 'user-agency_org'] = 1
 
     # Merge other-wx and other-nonwx in to general other category.
-    df.loc[(df['user-affiliation'] == 'Other - Wx') | (df['user-affiliation'] == 'Other - Non-Wx'),
+    df.loc[(df['user-affiliation'] == 'Other Wx') | (df['user-affiliation'] == 'Other Non-Wx'),
            'user-affiliation'] = 'Other'
 
     if sep_exp is True:
         # Create an affiliation category for NWS experimental accounts.
-        df.loc[(df['user-affiliation'] == 'NWS') & (df['image-type'] == 'Watch/Warning (Exp)'),
+        df.loc[(df['user-affiliation'] == 'NWS') & (df['image-type_ww_exp'] == 1),
                'user-affiliation'] = 'NWS (Exp)'
 
     if len(df.loc[df['user-affiliation'] == 'Wx Bloggers']) == 0:
@@ -586,10 +631,10 @@ def scope_aff_filter(df, col_order, sep_exp=False):
     df['user-scope_aff'] = df['user-scope'] + str(' ') + df['user-affiliation']
     unique_scope_affs = df['user-scope_aff'].unique()
 
-    # Merge all scope-affiliation combinations with less than 45 tweets total in to Other. This number is arbitrary.
+    # Merge all scope-affiliation combinations with less than 100 tweets total in to Other. This number is arbitrary.
     for sa in unique_scope_affs:
-        if len(df.loc[df['user-scope_aff'] == sa]) < 45:
-            df.loc[df['user-scope_aff'] == sa, 'user-affiliation'] = 'Other'
+        if len(df.loc[df['user-scope_aff'] == sa]) < 100:
+            df.loc[df['user-scope_aff'] == sa, 'user-affiliation'] = 'Non-NWS Government'
 
     # Re-concatenate scope and affiliation columns.
     df['user-scope_aff'] = df['user-scope'] + str(' ') + df['user-affiliation']
@@ -606,21 +651,21 @@ def image_filter(df):
     # overlaps, and merging image data together into one column with descriptive names. Returns the updated dataframe.
 
     # Remove experimental watch/warning graphics from watch/warning code.
-    df.loc[df['image-type_ww_exp'] == 1, 'image-type_ww'] = 0
+    df.loc[(df['image-type_ww_exp'] == 1) | (df['image-type_ww_exp'] == '1'), 'image-type_ww'] = 0
 
     # Remove watch/warning overlaps with cone and mesoscale discussion.
-    df.loc[(df['image-type_ww_cone'] == 1) | (df['image-type_ww_meso-disc'] == 1), 'image-type_ww'] = 0
+    df.loc[(df['image-type_ww_cone'] == 1) | (df['image-type_ww_md'] == 1), 'image-type_ww'] = 0
 
-    # Merge rainfall forecast and rainfall outlook.
-    df['image-type_rain'] = df['image-type_rain-fore'] + df['image-type_rain-out']
+    # Merge rainfall forecast, rainfall outlook, and WPC mesoscale discussions.
+    df['image-type_rain'] = df['image-type_rain-fore'] + df['image-type_rain-out'] + df['image-type_meso-disc_wpc']
     df.loc[df['image-type_rain'] > 1, 'image-type_rain'] = 1
 
-    # Merge convective outlook and mesoscale discussion.
-    df['image-type_conv'] = df['image-type_conv-out'] + df['image-type_meso-disc']
+    # Merge convective outlook and SPC mesoscale discussion.
+    df['image-type_conv'] = df['image-type_conv-out'] + df['image-type_meso-disc_spc']
     df.loc[df['image-type_conv'] > 1, 'image-type_conv'] = 1
 
-    # Return split-off categories to other-forecast (except for model output).
-    df['image-type_other-fore'] = df['image-type_evac'] + df['image-type_other-fore'] + df['image-type_text']
+    # Return split-off categories to other-forecast (except for model output and text).
+    df['image-type_other-fore'] = df['image-type_evac'] + df['image-type_other-fore']
     df.loc[df['image-type_other-fore'] > 1, 'image-type_other-fore'] = 1
 
     # Merge model output with spaghetti plots.
@@ -633,7 +678,7 @@ def image_filter(df):
             df.loc[df['image-type_key-msg'] == 1, col] = 0
 
     # Merge image types with small counts with other-forecast.
-    df['image-type_other-fore'] = df['image-type_surge'] + df['image-type_trop-out'] + df[
+    df['image-type_other-fore'] = df['image-type_surge'] + df[
         'image-type_threat-impact'] + df['image-type_prob'] + df['image-type_arrival'] + df['image-type_other-fore'] + \
         df['image-type_video']
     df.loc[df['image-type_other-fore'] > 1, 'image-type_other-fore'] = 1
@@ -641,24 +686,21 @@ def image_filter(df):
     # Make type_sum dynamic and responsive to changes in coding.
     image_cols = ['image-type_multi', 'image-type_other-non-fore', 'image-type_other-fore', 'image-type_key-msg',
                   'image-type_model', 'image-type_riv-flood', 'image-type_conv', 'image-type_rain',
-                  'image-type_cone',
-                  'image-type_ww_exp', 'image-type_ww']
+                  'image-type_cone', 'image-type_text', 'image-type_trop-out', 'image-type_ww_exp', 'image-type_ww']
     df['image-type_sum'] = df[image_cols[1:]].sum(axis=1)
 
-    # Create a multi-code category, remove the individual codes, and recalculate type_sum.
+    # Create a multi-code category
     df.loc[df['image-type_sum'] > 1, 'image-type_multi'] = 1
-    for col in image_cols[1:]:
-        df.loc[df['image-type_multi'] == 1, col] = 0
-    df['image-type_sum'] = df[image_cols].sum(axis=1)
 
     # Create image type column by assessing the max value of the image type columns for each row and returning the
-    # column name.
-    df['image-type'] = df[image_cols].idxmax(axis=1)
+    # column name (except for Multiple, which is assigned for all tweets with more than one image type)
+    df['image-type'] = df[image_cols[1:]].idxmax(axis=1)
+    df.loc[df['image-type_sum'] > 1, 'image-type'] = 'Multiple'
 
     # Format image type column to have more descriptive/complete names.
     image_types = ['Multiple', 'Other - Non-Forecast', 'Other - Forecast', 'Key Messages', 'Model Output',
-                   'River Flood Forecast', 'SPC Convective Products', 'Rainfall Forecast/Outlook', 'Cone',
-                   'Watch/Warning (Exp)', 'Watch/Warning']
+                   'River Flood Forecast', 'Convective Outlook/Forecast', 'Rainfall Outlook/Forecast', 'Cone', 'Text',
+                   'Tropical Outlook', 'Watch/Warning (Exp)', 'Watch/Warning']
     df['image-type'].replace(dict(zip(image_cols, image_types)), inplace=True)
 
     return df
@@ -855,9 +897,13 @@ def descr_stats(df, columns, values, labels, metrics):
             count.append(len(df.loc[df[col] == val]))
             account_count.append(len(df.loc[df[col] == val]['user-screen_name'].unique()))
 
+    # Calculate tweet and account count for the entire dataset
+    count.append(len(df))
+    account_count.append(len(df['user-screen_name'].unique()))
+
     # Create a dataframe to store the count and account data, along with an index, formed from user-provided descriptive
     # labels.
-    descr_dict = {'index': labels, 'Accounts': account_count, 'Tweet Count': count}
+    descr_dict = {'index': labels + ['All'], 'Accounts': account_count, 'Tweet Count': count}
     df_out = pd.DataFrame(descr_dict)
 
     # Calculate median, maximum, and percent with values for each user-provided metric and for each user-provided
@@ -871,6 +917,11 @@ def descr_stats(df, columns, values, labels, metrics):
                 per_count.append(
                     100 * len(df.loc[(df['diffusion-' + metric + '_count'] > 0) & (df[col] == val)]) /
                     (df.loc[df[col] == val]['diffusion-' + metric + '_count'].count()))
+
+        # Calculate median, maximum and percent with values for the entire dataset for each user-provided metric
+        median_count.append(df['diffusion-' + metric + '_count'].median())
+        max_count.append(df['diffusion-' + metric + '_count'].max())
+        per_count.append(100 * len(df.loc[df['diffusion-' + metric + '_count'] > 0]) / len(df))
 
         # Append the median, maximum, and percent with values for each metric.
         df_out['Median ' + metric] = median_count
@@ -1170,6 +1221,26 @@ def rt_timeseries_table(df, gb, metric, show=True, save=False):
 
 # <editor-fold desc="Figures">
 # Figure 1: sankey diagram (re-code)
+def sankey():
+    fig = go.Figure(data=[go.Sankey(
+        node=dict(
+            pad=15,
+            thickness=20,
+            line=dict(
+                color='black',
+                width=0.5),
+            label=['Time-filtered dataset (47342)', '', 'Source-filtered (14284)', '', '',
+                   'Risk-image filtered (4457)', '', 'Relevance-filtered (4214)', '', 'Forecast-filtered (3330)'],
+            color=['black', 'black', 'black', '#b01e36', 'black', 'black', 'black', 'black', 'black', '#251fcf']),
+
+        link=dict(
+            source=[0, 0, 2, 2, 5, 5, 7, 7],
+            target=[2, 3, 5, 3, 7, 3, 9, 3],
+            value=[14284, 33058, 4457, 9827, 4214, 243, 3330, 884],
+            color=['#b0afcc', '#dea9b1', '#b0afcc', '#dea9b1', '#b0afcc', '#dea9b1', '#b0afcc', '#dea9b1']))])
+
+    fig.update_layout(title_text='Progressive Data Filtering: Tweet Count', font_size=40, font_color='black')
+    fig.show()
 
 # NEW Figure 3
 def timeseries_ww_wwexp_nonww(df, freq, dates, show=True, save=False):
@@ -1308,7 +1379,7 @@ def timeseries_ww_wwexp_nonww(df, freq, dates, show=True, save=False):
 
     # Save figure, if desired.
     if save is True:
-        fig.savefig('Timing\\timeseries_ww_wwexp_nonww' + freq_title + '.png', dpi=300)
+        fig.savefig('timeseries_6h.png', dpi=300)
 
 
 # Figure 4
@@ -1439,7 +1510,7 @@ def rt_rate_plot(df_all, gb, metric, show=True, save=False, **kwargs):
 
 
 # Figure 6/8
-def timeline(df, value_col, values, size_col, color_col, dates, zeros=True, show=True, save=False):
+def timeline(df, value_cols, values, labels, size_col, color_col, dates, zeros=True, show=True, save=False):
     # This function creates a figure from a user-provided tweet dataframe that displays each tweet as a circle, where
     # the size of the circle represents the value of the user-provided size column (e.g. diffusion-rt_count) and the
     # color represents the value of a binary user-provided color column (e.g. image-branding_off). Circles are plotted
@@ -1525,34 +1596,35 @@ def timeline(df, value_col, values, size_col, color_col, dates, zeros=True, show
         add = 0
     
     # Loop over each unique value in the user-provided value column.
-    for value in values:
-        # Split the dataframe in to two based on the value of the color column.
-        tweets_c1 = df.loc[(df[value_col] == value) & (df[color_col] == 1)]
-        tweets_c2 = df.loc[(df[value_col] == value) & (df[color_col] != 1)]
+    for col in value_cols:
+        for value in values:
+            # Split the dataframe in to two based on the value of the color column.
+            tweets_c1 = df.loc[(df[col] == value) & (df[color_col] == 1)]
+            tweets_c2 = df.loc[(df[col] == value) & (df[color_col] != 1)]
 
-        # Add a value to the size column depending on whether the user chooses to visualize zeros or not (the add value
-        # is 1 if zeros are included and 0 if not).
-        tweets_c1[size_col] = tweets_c1[size_col] + add
-        tweets_c2[size_col] = tweets_c2[size_col] + add
+            # Add a value to the size column depending on whether the user chooses to visualize zeros or not (the add value
+            # is 1 if zeros are included and 0 if not).
+            tweets_c1[size_col] = tweets_c1[size_col] + add
+            tweets_c2[size_col] = tweets_c2[size_col] + add
 
-        # Obtain the sorted dates for each split dataframe.
-        tweets_c1.sort_values(by='tweet-created_at', inplace=True)
-        times_c1 = tweets_c1['tweet-created_at']
-        tweets_c2.sort_values(by='tweet-created_at', inplace=True)
-        times_c2 = tweets_c2['tweet-created_at']
+            # Obtain the sorted dates for each split dataframe.
+            tweets_c1.sort_values(by='tweet-created_at', inplace=True)
+            times_c1 = tweets_c1['tweet-created_at']
+            tweets_c2.sort_values(by='tweet-created_at', inplace=True)
+            times_c2 = tweets_c2['tweet-created_at']
 
-        # Plot the split dataframes at the same y-value (all in one line), where the x-value is the time the tweet was
-        # posted. Size the circles by the user-provided size column. Vary the split dataframes by color.
-        ax.scatter(times_c1, [y] * len(times_c1), alpha=a,
-                   s=tweets_c1[size_col], edgecolor=ec, linewidth=lw, c=c1)
-        ax.scatter(times_c2, [y] * len(times_c2), alpha=a,
-                   s=tweets_c2[size_col], edgecolor=ec, linewidth=lw, c=c2)
+            # Plot the split dataframes at the same y-value (all in one line), where the x-value is the time the tweet was
+            # posted. Size the circles by the user-provided size column. Vary the split dataframes by color.
+            ax.scatter(times_c1, [y] * len(times_c1), alpha=a,
+                       s=tweets_c1[size_col], edgecolor=ec, linewidth=lw, c=c1)
+            ax.scatter(times_c2, [y] * len(times_c2), alpha=a,
+                       s=tweets_c2[size_col], edgecolor=ec, linewidth=lw, c=c2)
 
-        # Append the y-value to the yticks array.
-        yticks.append(y)
+            # Append the y-value to the yticks array.
+            yticks.append(y)
 
-        # Increment y by ydelta before moving on to the next value.
-        y += ydelta
+            # Increment y by ydelta before moving on to the next value.
+            y += ydelta
 
     # Set xticks and xticklabels by hand so they correspond to local time (UTC -5). Draw a vertical line at midnight
     # local time for each day in the time range.
@@ -1571,7 +1643,7 @@ def timeline(df, value_col, values, size_col, color_col, dates, zeros=True, show
 
     # Set yticks and yticklabels to represent each value. Remove yticks so only labels remain.
     ax.set_yticks(yticks)
-    ax.set_yticklabels(values)
+    ax.set_yticklabels(labels)
     ax.tick_params(axis='y', labelsize=fs, length=0)
 
     # Remove borders on right, left, and top of image.
