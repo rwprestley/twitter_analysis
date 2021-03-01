@@ -909,11 +909,12 @@ def descr_stats(df, columns, values, labels, metrics):
     # Calculate median, maximum, and percent with values for each user-provided metric and for each user-provided
     # combination of column and value.
     for metric in metrics:
-        median_count, max_count, per_count = ([] for _ in range(3))
+        median_count, max_count, total_count, per_count = ([] for _ in range(4))
         for col in columns:
             for val in values:
                 median_count.append(df.loc[df[str(col)] == val]['diffusion-' + metric + '_count'].median())
                 max_count.append(df.loc[df[str(col)] == val]['diffusion-' + metric + '_count'].max())
+                total_count.append(df.loc[df[str(col)] == val]['diffusion-' + metric + '_count'].sum())
                 per_count.append(
                     100 * len(df.loc[(df['diffusion-' + metric + '_count'] > 0) & (df[col] == val)]) /
                     (df.loc[df[col] == val]['diffusion-' + metric + '_count'].count()))
@@ -921,11 +922,13 @@ def descr_stats(df, columns, values, labels, metrics):
         # Calculate median, maximum and percent with values for the entire dataset for each user-provided metric
         median_count.append(df['diffusion-' + metric + '_count'].median())
         max_count.append(df['diffusion-' + metric + '_count'].max())
+        total_count.append(df['diffusion-' + metric + '_count'].sum())
         per_count.append(100 * len(df.loc[df['diffusion-' + metric + '_count'] > 0]) / len(df))
 
         # Append the median, maximum, and percent with values for each metric.
         df_out['Median ' + metric] = median_count
         df_out['Max ' + metric] = max_count
+        df_out['Total ' + metric] = total_count
         df_out['% with ' + metric] = per_count
 
     # Format the dataframe for display.
