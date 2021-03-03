@@ -473,7 +473,7 @@ def merge(himn_file, json_file, fore_filter=True, rel_filter=True, scope_filter=
     return tweets_harvey_final
 
 
-def tweet_diffusion_calc(tweet_df, data_folder, diff_folder, col_order, tweet_df_name='tweets_harvey_calc'):
+def tweet_diffusion_calc(tweet_df, data_folder, diff_folder):
     # Calculates counts and rates for each diffusion metric (retweet, reply, and quote tweet) for several different
     # timeframes after the posting of the tweet. These calculated metrics are appended to a tweet dataframe as new
     # columns. Required input: a dataframe with data for each tweet, a data folder where data is stored and saved, a
@@ -481,111 +481,105 @@ def tweet_diffusion_calc(tweet_df, data_folder, diff_folder, col_order, tweet_df
     # order that the calculated tweet_df should be ordered by, and a name to save the calculated tweet_df as
     # (default is "tweets_harvey_calc").
 
-    if ((tweet_df_name + '.csv') in os.listdir(data_folder)) is True & ('diffusion-rt_rate_5m' in
-                                                                   pd.read_csv(data_folder + '\\' + tweet_df_name + '.csv').columns) is True:
-        print('columns already created')
-        return pd.read_csv(data_folder + '\\' + tweet_df_name + '.csv')
+    print('creating columns...')
+    # Define lists to be iterated through later.
+    rate_times = [5, 10, 15, 30, 60, 120, 240, 360]
+    diff_metrics = ['retweet', 'quote_tweet', 'reply']
 
-    else:
-        print('creating columns...')
-        # Define lists to be iterated through later.
-        rate_times = [5, 10, 15, 30, 60, 120, 240, 360]
-        diff_metrics = ['retweet', 'quote_tweet', 'reply']
+    # Format ids as strings and make index of dataframe.
+    tweet_df['tweet-id'] = tweet_df['tweet-id'].astype(str)
+    tweet_df.set_index('tweet-id', inplace=True)
 
-        # Format ids as strings and make index of dataframe.
-        tweet_df['tweet-id'] = tweet_df['tweet-id'].astype(str)
-        tweet_df.set_index('tweet-id', inplace=True)
+    # Read diffusion data for each tweet-id in diffusion files folder that matches an id in the tweet dataframe
+    # (this prevents reading in outliers and experimental watch/warning images if they have been removed
+    # previously).
+    n = 0
+    for filename in os.listdir(data_folder + '\\' + diff_folder):
+        if (filename[:18] in tweet_df.index) is True:
+            with open(data_folder + '\\' + diff_folder + '\\' + filename, 'r') as f:
+                data = json.load(f)
 
-        # Read diffusion data for each tweet-id in diffusion files folder that matches an id in the tweet dataframe
-        # (this prevents reading in outliers and experimental watch/warning images if they have been removed
-        # previously).
-        n = 0
-        for filename in os.listdir(data_folder + '\\' + diff_folder):
-            if (filename[:18] in tweet_df.index) is True:
-                with open(data_folder + '\\' + diff_folder + '\\' + filename, 'r') as f:
-                    data = json.load(f)
+            # Convert data for each tweet-id in to a DataFrame (but only if tweet has any diffusion).
+            if len(data) != 0:
+                data_df = pd.json_normalize(data)
 
-                # Convert data for each tweet-id in to a DataFrame (but only if tweet has any diffusion).
-                if len(data) != 0:
-                    data_df = pd.json_normalize(data)
+                # Rename created-at column.
+                data_df.rename(columns={'created_at.$date': 'timestamp'}, inplace=True)
+                data_df = tweet_type_convert(data_df)
 
-                    # Rename created-at column.
-                    data_df.rename(columns={'created_at.$date': 'timestamp'}, inplace=True)
-                    data_df = tweet_type_convert(data_df)
+                # Convert timestamp to a datetime object.
+                data_df['timestamp'] = pd.to_datetime(data_df['timestamp'])
+                data_df['timestamp'] = data_df['timestamp'].dt.tz_convert('US/Central')
+                data_df.sort_values('timestamp', inplace=True)
 
-                    # Convert timestamp to a datetime object.
-                    data_df['timestamp'] = pd.to_datetime(data_df['timestamp'])
-                    data_df['timestamp'] = data_df['timestamp'].dt.tz_convert('US/Central')
-                    data_df.sort_values('timestamp', inplace=True)
+                # Obtain the tweet created-at time from tweet-data, matching tweet-data id to the current filename
+                # iteration (excluding the .json).
+                created_at = pd.to_datetime(tweet_df.loc[tweet_df.index == filename[:18], 'tweet-created_at'].iloc[0]).tz_convert('US/Central')
 
-                    # Obtain the tweet created-at time from tweet-data, matching tweet-data id to the current filename
-                    # iteration (excluding the .json).
-                    created_at = tweet_df.loc[tweet_df.index == filename[:18], 'tweet-created_at'].iloc[0]
+                # Calculate the time delta between the tweet's creation and the time diffusion occurred.
+                # Convert to minutes.
+                data_df['delta'] = data_df['timestamp'] - created_at
+                data_df['delta'] = (data_df['delta'].dt.days * 1440) + (data_df['delta'].dt.seconds / 60)
 
-                    # Calculate the time delta between the tweet's creation and the time diffusion occurred.
-                    # Convert to minutes.
-                    data_df['delta'] = data_df['timestamp'] - created_at
-                    data_df['delta'] = (data_df['delta'].dt.days * 1440) + (data_df['delta'].dt.seconds / 60)
-
-                    # For each metric and calculation timeframe, calculate the diffusion count within the timeframe and
-                    # the rate (in RT/reply/QT per hour). Append value to the tweet dataframe by locating the row where
-                    # the index is equal to the truncated filename. REQUIRES INDEX TO BE THE TWEET-ID.
-                    for metric in diff_metrics:
-                        for time in rate_times:
-                            tweet_df.loc[filename[:18], 'diffusion-' + metric + '_count_' + str(time) + 'm'] = len(
-                                data_df.loc[(data_df['tweet-type'] == metric) & (data_df['delta'] <= time)])
-                            tweet_df.loc[filename[:18], 'diffusion-' + metric + '_rate_' + str(time) + 'm'] = len(
-                                data_df.loc[(data_df['tweet-type'] == metric) &
-                                            (data_df['delta'] <= time)]) * (60 / time)
-
-                # If tweet has no diffusion, set metrics equal to zero.
-                else:
-                    for metric in diff_metrics:
-                        for time in rate_times:
-                            tweet_df.loc[filename[:18], 'diffusion-' + metric + '_count_' + str(time) + 'm'] = 0
-                            tweet_df.loc[filename[:18], 'diffusion-' + metric + '_rate_' + str(time) + 'm'] = 0
-
-            else:
-                print('filename not matched')
-                # If tweet has no diffusion, set metrics equal to zero.
+                # For each metric and calculation timeframe, calculate the diffusion count within the timeframe and
+                # the rate (in RT/reply/QT per hour). Append value to the tweet dataframe by locating the row where
+                # the index is equal to the truncated filename. REQUIRES INDEX TO BE THE TWEET-ID.
                 for metric in diff_metrics:
                     for time in rate_times:
-                        tweet_df.loc[filename[:18], 'diffusion-' + metric + '_count_' + str(time) + 'm'] = np.nan
-                        tweet_df.loc[filename[:18], 'diffusion-' + metric + '_rate_' + str(time) + 'm'] = np.nan
+                        tweet_df.loc[filename[:18], 'diffusion-' + metric + '_count_' + str(time) + 'm'] = len(
+                            data_df.loc[(data_df['tweet-type'] == metric) & (data_df['delta'] <= time)])
+                        #tweet_df.loc[filename[:18], 'diffusion-' + metric + '_rate_' + str(time) + 'm'] = len(
+                        #    data_df.loc[(data_df['tweet-type'] == metric) &
+                        #                (data_df['delta'] <= time)]) * (60 / time)
 
-            n += 1
-            print(str(n) + '/' + str(len(os.listdir(data_folder + '\\' + diff_folder))))
+            # If tweet has no diffusion, set metrics equal to zero.
+            else:
+                for metric in diff_metrics:
+                    for time in rate_times:
+                        tweet_df.loc[filename[:18], 'diffusion-' + metric + '_count_' + str(time) + 'm'] = 0
+                        #tweet_df.loc[filename[:18], 'diffusion-' + metric + '_rate_' + str(time) + 'm'] = 0
 
-        # Add or adjust column prefixes.
-        old_cols = []
-        new_cols = []
-        for col in tweet_df.columns:
-            if col[:17] == 'diffusion-retweet':
-                old_cols.append(col)
-                new_cols.append('diffusion-rt' + col[17:])
-            if col[:21] == 'diffusion-quote_tweet':
-                old_cols.append(col)
-                new_cols.append('diffusion-qt' + col[21:])
+        else:
+            print('filename not matched')
+            # If tweet has no diffusion, set metrics equal to zero.
+            for metric in diff_metrics:
+                for time in rate_times:
+                    tweet_df.loc[filename[:18], 'diffusion-' + metric + '_count_' + str(time) + 'm'] = np.nan
+                    #tweet_df.loc[filename[:18], 'diffusion-' + metric + '_rate_' + str(time) + 'm'] = np.nan
 
-        new_cols = [col.lower() for col in new_cols]
-        tweet_df.rename(columns=dict(zip(old_cols, new_cols)), inplace=True)
+        n += 1
+        print(str(n) + '/' + str(len(os.listdir(data_folder + '\\' + diff_folder))))
 
-        # Create combined RT/QT stats.
-        for time in rate_times:
-            tweet_df['diffusion-combined_rt_qt_count_' + str(time) + 'm'] = tweet_df['diffusion-rt_count_' + str(
-                time) + 'm'] + tweet_df['diffusion-qt_count_' + str(time) + 'm']
-            tweet_df['diffusion-combined_rt_qt_rate_' + str(time) + 'm'] = tweet_df['diffusion-rt_rate_' + str(
-                time) + 'm'] + tweet_df['diffusion-qt_rate_' + str(time) + 'm']
+    # Add or adjust column prefixes.
+    old_cols = []
+    new_cols = []
+    for col in tweet_df.columns:
+        if col[:17] == 'diffusion-retweet':
+            old_cols.append(col)
+            new_cols.append('diffusion-rt' + col[17:])
+        if col[:21] == 'diffusion-quote_tweet':
+            old_cols.append(col)
+            new_cols.append('diffusion-qt' + col[21:])
 
-        # Reorder the final dataset based on user-provided column order.
-        tweet_df = tweet_df.reset_index().reindex(columns=col_order)
-        tweet_df.set_index('tweet-id', inplace=True)
+    new_cols = [col.lower() for col in new_cols]
+    tweet_df.rename(columns=dict(zip(old_cols, new_cols)), inplace=True)
 
-        # Save the dataframe as a CSV and JSON file, using user-provided name.
-        tweet_df.to_csv(data_folder + '\\' + tweet_df_name + '.csv')
-        tweet_df.to_json(data_folder + '\\' + tweet_df_name + '.json')
+    # Create combined RT/QT stats.
+    for time in rate_times:
+        tweet_df['diffusion-combined_rt_qt_count_' + str(time) + 'm'] = tweet_df['diffusion-rt_count_' + str(
+            time) + 'm'] + tweet_df['diffusion-qt_count_' + str(time) + 'm']
+        #tweet_df['diffusion-combined_rt_qt_rate_' + str(time) + 'm'] = tweet_df['diffusion-rt_rate_' + str(
+        #    time) + 'm'] + tweet_df['diffusion-qt_rate_' + str(time) + 'm']
 
-        return tweet_df
+    # Reorder the final dataset based on user-provided column order.
+    #tweet_df = tweet_df.reset_index().reindex(columns=col_order)
+    #tweet_df.set_index('tweet-id', inplace=True)
+
+    # Save the dataframe as a CSV and JSON file, using user-provided name.
+    #tweet_df.to_csv(data_folder + '\\' + tweet_df_name + '.csv')
+    #tweet_df.to_json(data_folder + '\\' + tweet_df_name + '.json')
+
+    return tweet_df
 
 
 def scope_aff_filter(df, col_order, sep_exp=False):
