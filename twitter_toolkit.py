@@ -13,8 +13,102 @@ import os
 import webbrowser
 import plotly.graph_objects as go
 
-
 # <editor-fold desc="Data merging and filtering">
+
+
+def media_type_convert(df):
+    # Converts media type columns to a consistent standard across Twitter data sources. Returns dataframe with
+    # updated media type columns.
+
+    # For missing data or JSON based dataframes, a single media-type column already exists. Modify it to distinguish
+    # multiple image tweets from single image tweets, simplify the 'gif' title, and rename the column for
+    # consistency with other column names.
+    if ('media-media_type' in df.columns) is True:
+        df.loc[
+            (df['media-media_type'] == 'photo') & (
+                    df['media-url_num'] == 1), 'media-media_type'] = 'single_photo'
+        df.loc[
+            (df['media-media_type'] == 'photo') & (df['media-url_num'] > 1),
+            'media-media_type'] = 'multi_photo'
+        df.loc[df['media-media_type'] == 'animated_gif', 'media-media_type'] = 'gif'
+        df.rename(columns={'media-media_type': 'media-type'}, inplace=True)
+
+    # For HIMN CSV-based dataframes, a single media-type column needs to be created.
+    else:
+        # Convert columns from bool or object to int64.
+        media_types = ['media-gif', 'media-multi_photo', 'media-single_photo', 'media-video']
+        for type_col in media_types:
+            df[type_col] = df[type_col].astype('int64')
+
+        # Create media type column by assessing the max value of the tweet type columns for each row and returning
+        # the column name. Remove 'media-' header to leave just the media type.
+        df['media-type'] = df[media_types].idxmax(axis=1)
+        df['media-type'] = df['media-type'].str[6:]
+
+        # Remove individual media type columns.
+        df.drop(columns=media_types, inplace=True)
+        df.drop(columns='media-category', inplace=True)
+
+    return df
+
+
+def media_url_convert(df):
+    # Reformats media URL column and splits in to seperate columns for each URL. Returns dataframe with updated
+    # media columns.
+
+    # The media URL column is stored differently based on where the data originates from. Loop through both options
+    # to ensure the URL columns are converted regardless of how they are stored.
+
+    media_url_cols = ['media-media_urls', 'tweet-media_urls']
+    for url_col in media_url_cols:
+        # If the column is in the dataframe, go ahead with conversion then end code. Else, move to the next column.
+        if (url_col in df.columns) is True:
+
+            # Format the media URL column, if not already formatted.
+            if df[url_col].iloc[0][:1] != 'h':
+                # Convert the column to a string and remove leading/trailing brackets.
+                df[url_col] = df[url_col].astype(str)
+                df[url_col] = df[url_col].str[1:-1]
+
+                # Remove hyphens and extra strings in the string, leaving just a list of plain text URLS seperated
+                # only by commas.
+                replace_pattern = '|'.join(["'", " "])
+                df[url_col] = df[url_col].str.replace(replace_pattern, '')
+
+            # Use the number of commas in the string to count the number of URLS.
+            df['media-url_num'] = df[url_col].str.count(",") + 1
+
+            # Create a list of four potential new media columns (there can be a maxiumum of four media attachments
+            # to a tweet).
+            media_cols = []
+            for z in range(1, 5):
+                media_cols.append('media-url' + str(z))
+
+            # Calculate the maximum number of media attachments of any tweet in the dataset, and use this to create
+            # the correct number of new media URL columns (e.g. a dataset with a max of 2 media attachments should
+            # only have two media URL columns - media-url1 and media-url2.
+            for z in range(1, 5):
+                if z == df['media-url_num'].max():
+                    media_cols_max = media_cols[0:z]
+                    df[media_cols_max] = df[url_col].str.split(',', expand=True)
+                    break
+                else:
+                    continue
+
+            # Rename the original media URL column.
+            df.rename(columns={url_col: 'media-urls'}, inplace=True)
+
+            if url_col == 'tweet-media_urls':
+                df.drop('tweet-num_media_urls', axis=1, inplace=True)
+
+            break
+
+        else:
+            continue
+
+    return df
+
+
 def tweet_type_convert(df):
     # Converts tweet type columns (for deleted tweet, quote tweet, reply, retweet, and original tweet) in JSON-based
     # Twitter dataframes to a single tweet type column. Returns df with new tweet type column and old tweet type
@@ -38,148 +132,46 @@ def tweet_type_convert(df):
     return df
 
 
-def merge(himn_file, json_file, fore_filter=True, rel_filter=True, scope_filter=True, **kwargs):
-    # -----------------------------------------------------------------------------------------------------------------#
-    # Given file names for HIMN/CSV Twitter data file and JSON Twitter data file, applies data transformations to align
-    # dataframes and merges to create one unified dataframe (with all coded data and tweet-ids intact. Optionally takes
-    # missing data file created via Python image coding and concatenates with HIMN/CSV dataframe before merge.
-    # -----------------------------------------------------------------------------------------------------------------#
+def merge_orig_codes(df, orig_file):
+    """
+    Merge tweet data with originator data to include coded originator data
 
-    # -----------------------------------------------------------------------------------------------------------------#
-    # DEFINE FUNCTIONS TO CONVERT MEDIA URl AND MEDIA TYPE COLUMNS ----------------------------------------------------#
-    # -----------------------------------------------------------------------------------------------------------------#
+    Parameters:
+        df: A tweet database (Pandas dataframe)
+        orig_file: Filename/location of originators, which includes scope, affiliation, and agency codes for each
+                       originator (string)
+    """
 
-    def media_url_convert(df):
-        # Reformats media URL column and splits in to seperate columns for each URL. Returns dataframe with updated
-        # media columns.
+    final_originator_codes = pd.read_csv(orig_file)
+    final_originator_codes.rename(
+        columns={'Originator': 'user-screen_name', 'Scope': 'user-scope', 'Agency': 'user-agency',
+                 'Affiliation': 'user-affiliation'}, inplace=True)
 
-        # The media URL column is stored differently based on where the data originates from. Loop through both options
-        # to ensure the URL columns are converted regardless of how they are stored.
+    final_originator_codes['user-screen_name'] = final_originator_codes['user-screen_name'].str.lower()
+    df['user-screen_name'] = df['user-screen_name'].str.lower()
 
-        media_url_cols = ['media-media_urls', 'tweet-media_urls']
-        for url_col in media_url_cols:
-            # If the column is in the dataframe, go ahead with conversion then end code. Else, move to the next column.
-            if (url_col in df.columns) is True:
+    df = pd.merge(df, final_originator_codes.iloc[:, 0:4], on='user-screen_name', how='left')
 
-                # Format the media URL column, if not already formatted.
-                if df[url_col].iloc[0][:1] != 'h':
-                    # Convert the column to a string and remove leading/trailing brackets.
-                    df[url_col] = df[url_col].astype(str)
-                    df[url_col] = df[url_col].str[1:-1]
+    return df
 
-                    # Remove hyphens and extra strings in the string, leaving just a list of plain text URLS seperated
-                    # only by commas.
-                    replace_pattern = '|'.join(["'", " "])
-                    df[url_col] = df[url_col].str.replace(replace_pattern, '')
 
-                # Use the number of commas in the string to count the number of URLS.
-                df['media-url_num'] = df[url_col].str.count(",") + 1
+def himn_convert(file):
+    """
+    Convert an original HIMN datafile to a dataframe, compatible for merging with other datasets
 
-                # Create a list of four potential new media columns (there can be a maxiumum of four media attachments
-                # to a tweet).
-                media_cols = []
-                for z in range(1, 5):
-                    media_cols.append('media-url' + str(z))
+    Parameters:
+        file: Filename/location of the HIMN datafile (string)
+    """
 
-                # Calculate the maximum number of media attachments of any tweet in the dataset, and use this to create
-                # the correct number of new media URL columns (e.g. a dataset with a max of 2 media attachments should
-                # only have two media URL columns - media-url1 and media-url2.
-                for z in range(1, 5):
-                    if z == df['media-url_num'].max():
-                        media_cols_max = media_cols[0:z]
-                        df[media_cols_max] = df[url_col].str.split(',', expand=True)
-                        break
-                    else:
-                        continue
+    # Read in data
+    himn_df = pd.read_csv(file, low_memory=False, header=0, encoding="ISO-8859-1")
 
-                # Rename the original media URL column.
-                df.rename(columns={url_col: 'media-urls'}, inplace=True)
-
-                if url_col == 'tweet-media_urls':
-                    df.drop('tweet-num_media_urls', axis=1, inplace=True)
-
-                break
-
-            else:
-                continue
-
-        return df
-
-    def media_type_convert(df):
-        # Converts media type columns to a consistent standard across Twitter data sources. Returns dataframe with
-        # updated media type columns.
-
-        # For missing data or JSON based dataframes, a single media-type column already exists. Modify it to distinguish
-        # multiple image tweets from single image tweets, simplify the 'gif' title, and rename the column for
-        # consistency with other column names.
-        if ('media-media_type' in df.columns) is True:
-            df.loc[
-                (df['media-media_type'] == 'photo') & (
-                        df['media-url_num'] == 1), 'media-media_type'] = 'single_photo'
-            df.loc[
-                (df['media-media_type'] == 'photo') & (df['media-url_num'] > 1),
-                'media-media_type'] = 'multi_photo'
-            df.loc[df['media-media_type'] == 'animated_gif', 'media-media_type'] = 'gif'
-            df.rename(columns={'media-media_type': 'media-type'}, inplace=True)
-
-        # For HIMN CSV-based dataframes, a single media-type column needs to be created.
-        else:
-            # Convert columns from bool or object to int64.
-            media_types = ['media-gif', 'media-multi_photo', 'media-single_photo', 'media-video']
-            for type_col in media_types:
-                df[type_col] = df[type_col].astype('int64')
-
-            # Create media type column by assessing the max value of the tweet type columns for each row and returning
-            # the column name. Remove 'media-' header to leave just the media type.
-            df['media-type'] = df[media_types].idxmax(axis=1)
-            df['media-type'] = df['media-type'].str[6:]
-
-            # Remove individual media type columns.
-            df.drop(columns=media_types, inplace=True)
-            df.drop(columns='media-category', inplace=True)
-
-        return df
-
-    # -----------------------------------------------------------------------------------------------------------------#
-    # DATA INPUT ------------------------------------------------------------------------------------------------------#
-    # -----------------------------------------------------------------------------------------------------------------#
-
-    # HIMN ------------------------------------------------------------------------------------------------------------#
-    himn_df = pd.read_csv(himn_file, low_memory=False, header=0, encoding="ISO-8859-1")
-
-    # JSON ------------------------------------------------------------------------------------------------------------#
-    with open(json_file, 'r') as f:
-        json_data = json.load(f)
-    json_data_df = pd.json_normalize(json_data)
-
-    # Optional input 'missing_file' -----------------------------------------------------------------------------------#
-    missing_file = kwargs.get('missing_file', None)
-
-    # -----------------------------------------------------------------------------------------------------------------#
-    # REMOVE EXTRANEOUS COLUMNS ---------------------------------------------------------------------------------------#
-    # -----------------------------------------------------------------------------------------------------------------#
-
-    # HIMN ------------------------------------------------------------------------------------------------------------#
-    himn_df.drop(columns=['concat_key', 'concat_key.1', 'rel_X_fore_Harvey', 'threat_sum', 'type_sum', 'type_WW_RS',
-                          'type_WW_text', 'time_Irma', 'rel_Irma', 'fore_Irma'], inplace=True)
-
-    himn_diffusion_cols_keep = ['diffusion-combined_rt_qt_count', 'diffusion-qt_count', 'diffusion-reply_count',
-                                'diffusion-retweet_count']
-    for col in himn_df.columns:
-        if (col[:9] == 'diffusion') & ((col in himn_diffusion_cols_keep) is False):
-            himn_df.drop(columns=col, inplace=True)
-        if col[:6] == 'threat':
-            himn_df.drop(columns=col, inplace=True)
-
-    # JSON ------------------------------------------------------------------------------------------------------------#
-    json_drop_cols = ['favorites_count', 'geolocation', 'user.account_created_at.$date', 'user.description']
-    json_data_df.drop(labels=json_drop_cols, axis=1, inplace=True)
-
-    # -----------------------------------------------------------------------------------------------------------------#
-    # RENAME COLUMNS --------------------------------------------------------------------------------------------------#
-    # -----------------------------------------------------------------------------------------------------------------#
-
-    # HIMN ------------------------------------------------------------------------------------------------------------#
+    # Remove extraneous columns
+    drop_cols = ['concat_key', 'concat_key.1', 'rel_X_fore_Harvey', 'threat_sum', 'type_sum', 'type_WW_RS',
+                 'type_WW_text', 'time_Irma', 'rel_Irma', 'fore_Irma']
+    diff_cols = [col for col in himn_df.columns if col[:9] == 'diffusion']
+    threat_cols = [col for col in himn_df.columns if col[:6] == 'threat']
+    himn_df.drop(columns=drop_cols + diff_cols + threat_cols, inplace=True)
 
     # Manually change image name types to change source to branding and replace second underscores with hyphens. Also
     # change diffusion-retweet column to diffusion-rt.
@@ -213,239 +205,206 @@ def merge(himn_file, json_file, fore_filter=True, rel_filter=True, scope_filter=
     new_cols = [col.lower() for col in new_cols]
     himn_df.rename(columns=dict(zip(old_cols, new_cols)), inplace=True)
 
-    # JSON ------------------------------------------------------------------------------------------------------------#
-
-    # Rename JSON created-at column and user columns.
-    json_data_df.rename(columns={'created_at.$date': 'created_at'}, inplace=True)
-    json_data_df.columns = json_data_df.columns.str.replace('.', '-')
-
-    # Add column prefixes for tweet columns.
-    old_cols = []
-    new_cols = []
-    json_tweet_cols = ['id', 'text', 'created_at']
-    for col in json_data_df.columns:
-        if (col in json_tweet_cols) is True:
-            old_cols.append(col)
-            new_cols.append('tweet-' + col)
-
-    new_cols = [col.lower() for col in new_cols]
-    json_data_df.rename(columns=dict(zip(old_cols, new_cols)), inplace=True)
-
-    # -----------------------------------------------------------------------------------------------------------------#
-    # CALCULATE NEW COLUMNS -------------------------------------------------------------------------------------------#
-    # -----------------------------------------------------------------------------------------------------------------#
-
-    # Create truncated tweet id column.
+    # Create truncated tweet id column
     himn_df['tweet-id_trunc'] = himn_df['tweet-id'].astype(str).str[:15]
-    json_data_df['tweet-id_trunc'] = json_data_df['tweet-id'].astype(str).str[:15]
 
-    # Create and/or edit tweet type, media URL, and media type columns.
-    json_data_df = tweet_type_convert(json_data_df)
+    # Create/edit media type and URL columns
     himn_df = media_url_convert(himn_df)
     himn_df = media_type_convert(himn_df)
-    json_data_df = media_url_convert(json_data_df)
-    json_data_df = media_type_convert(json_data_df)
-
-    # Create a code for video based on the media type column.
-    himn_df['image-type_video'] = [1 if x == 'video' else 0 for x in himn_df['media-type']]
-
-    # Merge JSON tweet-ids with HIMN data in order to have full tweet-ids for all tweets
-    himn_df = pd.merge(himn_df, json_data_df[['tweet-id', 'tweet-id_trunc']], on='tweet-id_trunc', how='left',
-                       suffixes=('_y', ''))
-    himn_df.drop(himn_df.filter(regex='_y$').columns.tolist(), axis=1, inplace=True)
 
     # Convert created_at column to format that matches missing and JSON datasets
     himn_df['tweet-created_at'] = pd.to_datetime(himn_df['tweet-created_at'], infer_datetime_format=True)
     himn_df['tweet-created_at'] = himn_df['tweet-created_at'].dt.tz_localize('UTC')
     himn_df['tweet-created_at'] = himn_df['tweet-created_at'].dt.strftime('%Y-%m-%d %H:%M:%S%z')
 
-    # Calculate diffusion metrics.
-    himn_rt = []
-    himn_reply = []
-    himn_qt = []
+    # Filter data
+    himn_df = himn_df.loc[himn_df['tweet-rel_harvey'] == '1']
+    himn_df = himn_df.loc[himn_df['tweet-fore_harvey'] == '1']
+    himn_df = himn_df.loc[(himn_df['user-scope'] == 'Local - Harvey') |
+                          (himn_df['user-scope'] == 'National/International')]
 
-    missing_ids = himn_df['tweet-id'].astype(str).to_list()
+    return himn_df
 
-    for tweet_id in missing_ids:
-        filename = tweet_id + '.json'
-        direc = 'Data\\harvey_tweet_diffusion_files'
-        if filename in os.listdir(direc):
-            with open(direc + '\\' + filename, 'r') as f:
-                data = json.load(f)
 
-                if len(data) != 0:
-                    # Convert data for each tweet-id in to a DataFrame (but only if tweet has any diffusion).
-                    data_df = pd.json_normalize(data)
+def json_convert(file):
+    """
+    Convert a JSON tweet file to a dataframe of tweet-ids and truncated ids, compatible for merging with HIMN data
 
-                    himn_rt.append(len(data_df.loc[data_df['tweet_types.retweet'] != 0]))
-                    himn_qt.append(len(data_df.loc[data_df['tweet_types.quote_tweet'] != 0]))
-                    himn_reply.append(len(data_df.loc[data_df['tweet_types.reply'] != 0]))
+    Parameters:
+        file: Filename/location for JSON tweet file (string)
+    """
 
-                else:
-                    himn_rt.append(0)
-                    himn_qt.append(0)
-                    himn_reply.append(0)
-        else:
-            himn_rt.append(0)
-            himn_qt.append(0)
-            himn_reply.append(0)
+    # Read in JSON data
+    with open(file, 'r') as f:
+        json_data = json.load(f)
+    json_data_df = pd.json_normalize(json_data)
 
-    himn_df['diffusion-qt_count'] = himn_qt
-    himn_df['diffusion-reply_count'] = himn_reply
-    himn_df['diffusion-rt_count'] = himn_rt
-    himn_df['diffusion-combined_rt_qt_count'] = himn_df['diffusion-rt_count'] + \
-                                                   himn_df['diffusion-qt_count']
+    # Modify tweet-id column and create tweet-id trunc column
+    json_data_df.rename(columns={'id': 'tweet-id'}, inplace=True)
+    json_data_df['tweet-id_trunc'] = json_data_df['tweet-id'].astype(str).str[:15]
 
+    # Remove all non-id columns
+    for col in json_data_df.columns:
+        if col not in ['tweet-id', 'tweet-id_trunc']:
+            json_data_df.drop(columns=col, inplace=True)
+
+    return json_data_df
+
+
+def old_missing_convert(file, orig_file):
+    """
+    Convert a datafile of new tweet data uncovered in summer 2020 to a dataframe, compatible for merging with other
+        tweet data
+
+    Parameters:
+        file: Filename/location of missing tweet data uncovered in summer 2020 (string)
+        orig_file: Filename/location of originators, which includes scope, affiliation, and agency codes for each
+                       originator (string)
+    """
+
+    # Read in old missing data (created via image coding package in summer/fall 2020).
+    old_missing_df = pd.read_csv(file, encoding='UTF-8')
+
+    # Remove extraneous columns
+    threat_cols = [col for col in old_missing_df.columns if col[:6] == 'threat']
+    drop_cols = ['geolocation', 'user.account_created_at.$date', 'favorites_count', 'user.description'] + threat_cols
+    old_missing_df.drop(columns=drop_cols, inplace=True)
+
+    for col in old_missing_df.columns:
+        if col[:7] == 'Unnamed':
+            old_missing_df.drop(col, axis=1, inplace=True)
+
+    # Rename user columns.
+    old_missing_df.columns = old_missing_df.columns.str.replace('.', '-')
+
+    # Add column prefixes to image code columns.
+    image_cols = [col for col in old_missing_df.columns if col[:4] == 'type'] + ['lang_spanish']
+    new_cols = [('image-' + col).lower() for col in image_cols]
+    old_missing_df.rename(columns=dict(zip(image_cols, new_cols)), inplace=True)
+
+    # Rename other columns
+    old_missing_df.rename(columns={'url_count': 'media-url_num', 'source_off': 'image-branding_off',
+                               'source_unoff': 'image-branding_unoff', 'created_at-$date': 'tweet-created_at',
+                               'id': 'tweet-id', 'image-type_ww_meso-disc': 'image-type_ww_md', 'text': 'tweet-text',
+                               'media_url1': 'media-url1', 'media_url2': 'media-url2', 'media_url3': 'media-url3',
+                               'media-media_urls': 'media-urls'}, inplace=True)
+
+    # Create truncated id column.
+    old_missing_df['tweet-id_trunc'] = old_missing_df['tweet-id'].astype(str).str[:15]
+
+    # Create/edit media type and tweet type columns.
+    old_missing_df = media_type_convert(old_missing_df)
+    old_missing_df = tweet_type_convert(old_missing_df)
+
+    # Create time, relevance and forecast columns
+    old_missing_df['tweet-time_harvey'] = 1
+    old_missing_df['tweet-fore_harvey'] = 1
+    old_missing_df['tweet-rel_harvey'] = 1
+
+    # Convert created_at column to format that matches HIMN and JSON datasets
+    old_missing_df['tweet-created_at'] = pd.to_datetime(old_missing_df['tweet-created_at'], infer_datetime_format=True)
+    old_missing_df['tweet-created_at'] = old_missing_df['tweet-created_at'].dt.tz_localize('UTC')
+    old_missing_df['tweet-created_at'] = old_missing_df['tweet-created_at'].dt.strftime('%Y-%m-%d %H:%M:%S%z')
+
+    # Merge missing data with originator data to include coded originator data.
+    old_missing_df = merge_orig_codes(old_missing_df, orig_file)
+
+    return old_missing_df
+
+
+def new_missing_convert(file, orig_file):
+    """
+    Convert a datafile of new tweet data uncovered in December 2020 to a dataframe, compatabile for merging with other
+        tweet data
+
+    Parameters:
+        file: Filename/location of missing tweet data uncovered in December 2020 (string)
+        orig_file: Filename/location of originators, which includes scope, affiliation, and agency codes for each
+                       originator (string)
+    """
+
+    # Read in new missing data, discovered in Dec 2020 (created via image coding package).
+    new_missing_df = pd.read_csv(file, encoding='UTF-8')
+
+    # Remove extraneous columns
+    new_missing_drop_cols = ['geolocation', 'user.account_created_at', 'link', 'hrisk_img', 'image_count', 'id.trunc']
+    new_missing_df.drop(columns=new_missing_drop_cols, inplace=True)
+
+    for col in new_missing_df.columns:
+        if col[:7] == 'Unnamed':
+            new_missing_df.drop(col, axis=1, inplace=True)
+
+    # Rename missing user columns.
+    new_missing_df.columns = new_missing_df.columns.str.replace('.', '-')
+
+    # Add column prefixes and map 'yes'/'no' to 1/0.
+    image_cols = ['trop-out', 'cone', 'arrival', 'prob', 'surge', 'key-msg', 'ww', 'threat-impact', 'conv-out',
+                  'meso-disc', 'rain-fore', 'rain-out', 'riv-flood', 'spag', 'text-img', 'model', 'evac',
+                  'other-fore', 'other-non-fore', 'video']
+    ww_cols = ['ww_exp', 'ww_cone', 'ww_md']
+    other_cols = ['official', 'unofficial', 'spanish', 'forecast', 'relevant']
+
+    new_cols = []
+    for col in new_missing_df.columns:
+        if col in image_cols:
+            new_cols.append('image-type_' + col)
+            new_missing_df[col] = new_missing_df[col].map({'yes': 1, 'no': 0})
+        if col in ww_cols:
+            new_cols.append('image-type_' + col)
+            new_missing_df[col] = new_missing_df[col].map({'yes': 1, 'no': 0})
+        if col in other_cols:
+            new_missing_df[col] = new_missing_df[col].map({'yes': 1, 'no': 0})
+
+    new_missing_df.rename(columns=dict(zip(image_cols + ww_cols, new_cols)), inplace=True)
+
+    # Rename other columns
+    new_missing_df.rename(columns={'image-type_text-img': 'image-type_text', 'official': 'image-branding_off',
+                               'unofficial': 'image-branding_unoff', 'spanish': 'image-lang_spanish',
+                               'forecast': 'tweet-fore_harvey', 'relevant': 'tweet-rel_harvey',
+                               'tweet_type': 'tweet-type', 'text': 'tweet-text', 'created_at': 'tweet-created_at',
+                               'id': 'tweet-id'}, inplace=True)
+
+    # Create truncated id column.
+    new_missing_df['tweet-id_trunc'] = new_missing_df['tweet-id'].astype(str).str[:15]
+
+    # Create and/or edit media URL and media type columns.
+    new_missing_df = media_url_convert(new_missing_df)
+    new_missing_df = media_type_convert(new_missing_df)
+
+    # Create time column for Harvey
+    new_missing_df['tweet-time_harvey'] = 1
+
+    # Convert created_at column to format that matches HIMN and JSON datasets
+    new_missing_df['tweet-created_at'] = pd.to_datetime(new_missing_df['tweet-created_at'], infer_datetime_format=True)
+    new_missing_df['tweet-created_at'] = new_missing_df['tweet-created_at'].dt.strftime('%Y-%m-%d %H:%M:%S%z')
+
+    # Merge missing data with originator data to include coded originator data.
+    new_missing_df = merge_orig_codes(new_missing_df, orig_file)
+
+    return new_missing_df
+
+
+def merge(himn_file, json_file, old_missing_file, new_missing_file, orig_file):
     # -----------------------------------------------------------------------------------------------------------------#
-    # DATA FILTERING --------------------------------------------------------------------------------------------------#
+    # Given file names for HIMN/CSV Twitter data file and JSON Twitter data file, applies data transformations to align
+    # dataframes and merges to create one unified dataframe (with all coded data and tweet-ids intact. Optionally takes
+    # missing data file created via Python image coding and concatenates with HIMN/CSV dataframe before merge.
     # -----------------------------------------------------------------------------------------------------------------#
 
-    if rel_filter is True:
-        himn_df = himn_df.loc[himn_df['tweet-rel_harvey'] == '1']
+    # Reorganize and recalculate datasets to include the calculated properties and column names (excluding diffusion
+    # calculations)
+    himn_df = himn_convert(himn_file)
+    json_data_df = json_convert(json_file)
+    old_missing = old_missing_convert(old_missing_file, orig_file)
+    new_missing = new_missing_convert(new_missing_file, orig_file)
 
-    if fore_filter is True:
-        himn_df = himn_df.loc[himn_df['tweet-fore_harvey'] == '1']
+    # Merge JSON tweet-ids with HIMN data in order to have full tweet-ids for all tweets
+    himn_df = pd.merge(himn_df, json_data_df[['tweet-id', 'tweet-id_trunc']], on='tweet-id_trunc', how='left',
+                       suffixes=('_y', ''))
+    himn_df.drop(himn_df.filter(regex='_y$').columns.tolist(), axis=1, inplace=True)
 
-    if scope_filter is True:
-        himn_df = himn_df.loc[(himn_df['user-scope'] == 'Local - Harvey') |
-                              (himn_df['user-scope'] == 'National/International')]
-
-    # -----------------------------------------------------------------------------------------------------------------#
-
-    # If a missing file is listed, import the file, format it, and append it to the HIMN dataframe.
-    if missing_file is not None:
-
-        # -------------------------------------------------------------------------------------------------------------#
-        # DATA INPUT --------------------------------------------------------------------------------------------------#
-        # -------------------------------------------------------------------------------------------------------------#
-
-        # Read in missing data (created via image coding package).
-        missing_df = pd.read_csv(missing_file, encoding='UTF-8')
-
-        # -------------------------------------------------------------------------------------------------------------#
-        # REMOVE EXTRANEOUS COLUMNS -----------------------------------------------------------------------------------#
-        # -------------------------------------------------------------------------------------------------------------#
-        missing_drop_cols = ['geolocation', 'user.account_created_at', 'link', 'hrisk_img', 'image_count', 'id.trunc']
-        missing_df.drop(columns=missing_drop_cols, inplace=True)
-
-        for col in missing_df.columns:
-            if col[:7] == 'Unnamed':
-                missing_df.drop(col, axis=1, inplace=True)
-
-        # -------------------------------------------------------------------------------------------------------------#
-        # RENAME COLUMNS ----------------------------------------------------------------------------------------------#
-        # -------------------------------------------------------------------------------------------------------------#
-
-        # Rename missing user columns.
-        missing_df.columns = missing_df.columns.str.replace('.', '-')
-
-        # Add column prefixes and map 'yes'/'no' to 1/0.
-        image_cols = ['trop-out', 'cone', 'arrival', 'prob', 'surge', 'key-msg', 'ww', 'threat-impact', 'conv-out',
-                      'meso-disc', 'rain-fore', 'rain-out', 'riv-flood', 'spag', 'text-img', 'model', 'evac',
-                      'other-fore', 'other-non-fore', 'video']
-        ww_cols = ['ww_exp', 'ww_cone', 'ww_md']
-        other_cols = ['official', 'unofficial', 'spanish', 'forecast', 'relevant']
-
-        new_cols = []
-        for col in missing_df.columns:
-            if col in image_cols:
-                new_cols.append('image-type_' + col)
-                missing_df[col] = missing_df[col].map({'yes': 1, 'no': 0})
-            if col in ww_cols:
-                new_cols.append('image-type_' + col)
-                missing_df[col] = missing_df[col].map({'yes': 1, 'no': 0})
-            if col in other_cols:
-                missing_df[col] = missing_df[col].map({'yes': 1, 'no': 0})
-
-        missing_df.rename(columns=dict(zip(image_cols + ww_cols, new_cols)), inplace=True)
-
-        # Rename other columns
-        missing_df.rename(columns={'image-type_text-img': 'image-type_text', 'official': 'image-branding_off',
-                                   'unofficial': 'image-branding_unoff', 'spanish': 'image-lang_spanish',
-                                   'forecast': 'tweet-fore_harvey', 'relevant': 'tweet-rel_harvey',
-                                   'tweet_type': 'tweet-type', 'text': 'tweet-text', 'created_at': 'tweet-created_at',
-                                   'id': 'tweet-id'}, inplace=True)
-
-        # -------------------------------------------------------------------------------------------------------------#
-        # CALCULATE NEW COLUMNS ---------------------------------------------------------------------------------------#
-        # -------------------------------------------------------------------------------------------------------------#
-
-        # Create truncated id column.
-        missing_df['tweet-id_trunc'] = missing_df['tweet-id'].astype(str).str[:15]
-
-        # Create and/or edit media URL and media type columns.
-        missing_df = media_url_convert(missing_df)
-        missing_df = media_type_convert(missing_df)
-
-        # Create time column for Harvey
-        missing_df['tweet-time_harvey'] = 1
-
-        # Calculate diffusion metrics.
-        missing_rt = []
-        missing_reply = []
-        missing_qt = []
-
-        missing_ids = missing_df['tweet-id'].astype(str).to_list()
-
-        for tweet_id in missing_ids:
-            filename = tweet_id + '.json'
-            direc = 'Data\\harvey_tweet_diffusion_files'
-            if filename in os.listdir(direc):
-                with open(direc + '\\' + filename, 'r') as f:
-                    data = json.load(f)
-
-                    if len(data) != 0:
-                        # Convert data for each tweet-id in to a DataFrame (but only if tweet has any diffusion).
-                        data_df = pd.json_normalize(data)
-
-                        missing_rt.append(len(data_df.loc[data_df['tweet_types.retweet'] != 0]))
-                        missing_qt.append(len(data_df.loc[data_df['tweet_types.quote_tweet'] != 0]))
-                        missing_reply.append(len(data_df.loc[data_df['tweet_types.reply'] != 0]))
-
-                    else:
-                        missing_rt.append(0)
-                        missing_qt.append(0)
-                        missing_reply.append(0)
-            else:
-                missing_rt.append(0)
-                missing_qt.append(0)
-                missing_reply.append(0)
-
-        missing_df['diffusion-qt_count'] = missing_qt
-        missing_df['diffusion-reply_count'] = missing_reply
-        missing_df['diffusion-rt_count'] = missing_rt
-        missing_df['diffusion-combined_rt_qt_count'] = missing_df['diffusion-rt_count'] + \
-            missing_df['diffusion-qt_count']
-
-        # Convert created_at column to format that matches HIMN and JSON datasets
-        missing_df['tweet-created_at'] = pd.to_datetime(missing_df['tweet-created_at'], infer_datetime_format=True)
-        missing_df['tweet-created_at'] = missing_df['tweet-created_at'].dt.strftime('%Y-%m-%d %H:%M:%S%z')
-
-        # Create a code for video based on the media type column.
-        missing_df['image-type_video'] = [1 if x == 'video' else 0 for x in missing_df['media-type']]
-
-        # Remove overlaps when video is coded.
-        for col in missing_df.columns:
-            if (col[:10] == 'image-type') & (col != 'image-type_video'):
-                missing_df.loc[missing_df['image-type_video'] == 1, col] = 0
-
-        # -------------------------------------------------------------------------------------------------------------#
-        # INPUT NEW COLUMNS FROM MERGE --------------------------------------------------------------------------------#
-        # -------------------------------------------------------------------------------------------------------------#
-
-        # Merge missing data with originator data to include coded originator data.
-        final_originator_codes = pd.read_csv('origs_missing_coded.csv')
-        final_originator_codes.rename(
-            columns={'Originator': 'user-screen_name', 'Scope': 'user-scope', 'Agency': 'user-agency',
-                     'Affiliation': 'user-affiliation'}, inplace=True)
-
-        final_originator_codes['user-screen_name'] = final_originator_codes['user-screen_name'].str.lower()
-        missing_df['user-screen_name'] = missing_df['user-screen_name'].str.lower()
-
-        missing_df = pd.merge(missing_df, final_originator_codes.iloc[:, 0:4], on='user-screen_name', how='left')
-
-        # Concatenate missing data with HIMN data to obtain a full set of coded data.
-        tweets_harvey_final = pd.concat([himn_df, missing_df], join='outer')
+    # Concatenate missing datasets with HIMN data to obtain a full set of coded data.
+    tweets_harvey_final = pd.concat([himn_df, old_missing, new_missing], join='outer')
 
     # Count the number of duplicates in the tweet-id_trunc columns of the dataframes to be merged.
     dup_df = pd.DataFrame()
@@ -459,8 +418,16 @@ def merge(himn_file, json_file, fore_filter=True, rel_filter=True, scope_filter=
     json_data_df.drop_duplicates('tweet-id_trunc', inplace=True)
 
     # Replace empty values with zeros in numeric columns.
-    numeric_columns = himn_df.select_dtypes(include=['number']).columns
-    tweets_harvey_final[numeric_columns] = tweets_harvey_final[numeric_columns].fillna(0)
+    #numeric_columns = himn_df.select_dtypes(include=['number']).columns
+    #tweets_harvey_final[numeric_columns] = tweets_harvey_final[numeric_columns].fillna(0)
+
+    # Create a code for video based on the media type column.
+    tweets_harvey_final['image-type_video'] = [1 if x == 'video' else 0 for x in tweets_harvey_final['media-type']]
+
+    # Remove overlaps when video is coded.
+    for col in tweets_harvey_final.columns:
+        if (col[:10] == 'image-type') & (col != 'image-type_video'):
+            tweets_harvey_final.loc[tweets_harvey_final['image-type_video'] == 1, col] = 0
 
     # Create an English language column to complement the Spanish language column.
     tweets_harvey_final.loc[tweets_harvey_final['image-lang_spanish'] == 1, 'image-lang_english'] = 0
@@ -471,6 +438,49 @@ def merge(himn_file, json_file, fore_filter=True, rel_filter=True, scope_filter=
     tweets_harvey_final['tweet-text'] = tweets_harvey_final['tweet-text'].str.slice(stop=-23)
 
     return tweets_harvey_final
+
+
+def diff_calc_basic(df, diff_folder):
+    # Calculate diffusion metrics.
+    ids = df['tweet-id'].astype(str).to_list()
+    rt = []
+    reply = []
+    qt = []
+    n = 0
+    for tweet_id in ids:
+        filename = tweet_id + '.json'
+        direc = diff_folder
+        if filename in os.listdir(direc):
+            with open(direc + '\\' + filename, 'r') as f:
+                data = json.load(f)
+
+                if len(data) != 0:
+                    # Convert data for each tweet-id in to a DataFrame (but only if tweet has any diffusion).
+                    data_df = pd.json_normalize(data)
+
+                    rt.append(len(data_df.loc[data_df['tweet_types.retweet'] != 0]))
+                    qt.append(len(data_df.loc[data_df['tweet_types.quote_tweet'] != 0]))
+                    reply.append(len(data_df.loc[data_df['tweet_types.reply'] != 0]))
+
+                else:
+                    rt.append(0)
+                    qt.append(0)
+                    reply.append(0)
+        else:
+            rt.append(0)
+            qt.append(0)
+            reply.append(0)
+
+        # Track progress
+        n += 1
+        print(str(n) + '/' + str(len(os.listdir(direc))))
+
+    df['diffusion-qt_count'] = qt
+    df['diffusion-reply_count'] = reply
+    df['diffusion-rt_count'] = rt
+    df['diffusion-combined_rt_qt_count'] = df['diffusion-rt_count'] + df['diffusion-qt_count']
+
+    return df
 
 
 def tweet_diffusion_calc(tweet_df, data_folder, diff_folder):
@@ -514,7 +524,8 @@ def tweet_diffusion_calc(tweet_df, data_folder, diff_folder):
 
                 # Obtain the tweet created-at time from tweet-data, matching tweet-data id to the current filename
                 # iteration (excluding the .json).
-                created_at = pd.to_datetime(tweet_df.loc[tweet_df.index == filename[:18], 'tweet-created_at'].iloc[0]).tz_convert('US/Central')
+                created_at = pd.to_datetime(tweet_df.loc[tweet_df.index == filename[:18], 'tweet-created_at'].iloc[0]).\
+                    tz_convert('US/Central')
 
                 # Calculate the time delta between the tweet's creation and the time diffusion occurred.
                 # Convert to minutes.
@@ -571,8 +582,8 @@ def tweet_diffusion_calc(tweet_df, data_folder, diff_folder):
         #tweet_df['diffusion-combined_rt_qt_rate_' + str(time) + 'm'] = tweet_df['diffusion-rt_rate_' + str(
         #    time) + 'm'] + tweet_df['diffusion-qt_rate_' + str(time) + 'm']
 
-    # Reorder the final dataset based on user-provided column order.
-    #tweet_df = tweet_df.reset_index().reindex(columns=col_order)
+    # Reset the index
+    tweet_df = tweet_df.reset_index()
     #tweet_df.set_index('tweet-id', inplace=True)
 
     # Save the dataframe as a CSV and JSON file, using user-provided name.
