@@ -5,13 +5,17 @@ import matplotlib.dates as mdates
 from matplotlib.patches import Patch
 from matplotlib.lines import Line2D
 from matplotlib.colors import rgb2hex
+from matplotlib.colors import ListedColormap
+from matplotlib.ticker import ScalarFormatter
 import numpy as np
 import math
 from scipy import stats
+from scipy.stats import gaussian_kde
 import json
 import os
 import webbrowser
 import plotly.graph_objects as go
+import seaborn as sns
 
 # <editor-fold desc="Data merging and filtering">
 
@@ -387,7 +391,7 @@ def new_missing_convert(file, orig_file):
 def merge(himn_file, json_file, old_missing_file, new_missing_file, orig_file):
     # -----------------------------------------------------------------------------------------------------------------#
     # Given file names for HIMN/CSV Twitter data file and JSON Twitter data file, applies data transformations to align
-    # dataframes and merges to create one unified dataframe (with all coded data and tweet-ids intact. Optionally takes
+    # dataframes and merges to create one unified dataframe (with all coded data and tweet-ids intact). Optionally takes
     # missing data file created via Python image coding and concatenates with HIMN/CSV dataframe before merge.
     # -----------------------------------------------------------------------------------------------------------------#
 
@@ -594,10 +598,15 @@ def tweet_diffusion_calc(tweet_df, data_folder, diff_folder):
 
 
 def scope_aff_filter(df, col_order, sep_exp=False):
-    # This function renames and reorganizes tweet source values by renaming some values, creating binary columns,
-    # seperating experimental watch/warning products (if user desires), and merging scope/aff combos with few tweets
-    # together. The function requires a tweet dataframe and a list of columns in the order they should be arranged
-    # in the updated dataframe which is returned.
+    """
+    Renames and reorganizes tweet sources in a tweet dataframe
+
+    Parameters:
+        df: A tweet dataframe, where sources are coded (Pandas dataframe)
+        col_order: Order in which columns should be organized (list)
+        sep_exp: Whether to create seperate source categories for experimental watch/warning images posted by local and
+                     national NWS sources (boolean)
+    """
 
     # Rename scope values for clarity.
     df['user-scope'] = df['user-scope'].str[:5]
@@ -652,14 +661,39 @@ def scope_aff_filter(df, col_order, sep_exp=False):
 
 
 def image_filter(df):
-    # This function reorganizes image type categories in a tweet dataframe by merging categories together, removing
-    # overlaps, and merging image data together into one column with descriptive names. Returns the updated dataframe.
+    """
+    Renames and reorganizes image categorizations in a coded tweet dataframe
+
+    Parameters:
+        df: A dataframe of coded Twitter data (Pandas dataframe)
+    """
+
+    # Define final list of image columns
+    image_cols = ['image-type_multi', 'image-type_other-non-fore', 'image-type_other-fore', 'image-type_key-msg',
+                  'image-type_model', 'image-type_riv-flood', 'image-type_conv', 'image-type_rain',
+                  'image-type_cone', 'image-type_text', 'image-type_trop-out', 'image-type_ww_exp', 'image-type_ww']
 
     # Remove experimental watch/warning graphics from watch/warning code.
     df.loc[(df['image-type_ww_exp'] == 1) | (df['image-type_ww_exp'] == '1'), 'image-type_ww'] = 0
 
     # Remove watch/warning overlaps with cone and mesoscale discussion.
     df.loc[(df['image-type_ww_cone'] == 1) | (df['image-type_ww_md'] == 1), 'image-type_ww'] = 0
+
+    # Remove evac/preparedness overlaps with text, where there is only one media URL
+    df.loc[(df['image-type_evac'] == 1) & (df['image-type_text'] == 1) & (df['media-url_num'] == 1),
+           'image-type_evac'] = 0
+
+    # Where other-non-forecast overlaps with text, change text code to Other - Forecast.
+    df.loc[(df['image-type_other-non-fore'] == 1) & (df['image-type_text'] == 1), 'image-type_other-fore'] = 1
+    df.loc[(df['image-type_other-non-fore'] == 1) & (df['image-type_text'] == 1), 'image-type_text'] = 0
+
+    # Change text code to other - forecast for specific tweets (infographics where text overlays were coded as text, and
+    # newspaper front pages)
+    change_ids = [901912382661943296, 901973700718755842, 902037161293344768, 902229526213787648, 902381636863569920,
+                  902440415680397312, 902776264024580097, 901701229520326656, 901875772159295488, 901990595694141440,
+                  902137209779888128]
+    df.loc[df.index.isin(change_ids), 'image-type_text'] = 0
+    df.loc[df.index.isin(change_ids), 'image-type_other-fore'] = 1
 
     # Merge rainfall forecast, rainfall outlook, and WPC mesoscale discussions.
     df['image-type_rain'] = df['image-type_rain-fore'] + df['image-type_rain-out'] + df['image-type_meso-disc_wpc']
@@ -688,10 +722,12 @@ def image_filter(df):
         df['image-type_video']
     df.loc[df['image-type_other-fore'] > 1, 'image-type_other-fore'] = 1
 
+    # Remove other-non-forecast overlaps with other forecast content where there is only one media URL
+    for col in image_cols[2:]:
+        df.loc[(df['image-type_other-non-fore'] == 1) & (df['media-url_num'] == 1) & (df[col] == 1),
+               'image-type_other-non-fore'] = 0
+
     # Make type_sum dynamic and responsive to changes in coding.
-    image_cols = ['image-type_multi', 'image-type_other-non-fore', 'image-type_other-fore', 'image-type_key-msg',
-                  'image-type_model', 'image-type_riv-flood', 'image-type_conv', 'image-type_rain',
-                  'image-type_cone', 'image-type_text', 'image-type_trop-out', 'image-type_ww_exp', 'image-type_ww']
     df['image-type_sum'] = df[image_cols[1:]].sum(axis=1)
 
     # Create a multi-code category
@@ -1223,6 +1259,54 @@ def rt_timeseries_table(df, gb, metric, show=True, save=False):
     # Save output, if desired.
     if save is True:
         df_gb_per.to_csv(metric + '_timeseries_per.csv', float_format='%.0f')
+
+
+def cat_midpoint(df, cat_col, weight_col, show=False):
+    """
+    Calculates the midpoint and diffusion-weighted midpoint (time) for each unique value in a tweet categorization
+        scheme. Returns a sorted (by diffusion-weighted midpoint) list of unique categorizations.
+
+    Parameters:
+        df: A tweet dataframe with coded categorizations and diffusion data (Pandas dataframe)
+        cat_col: Name of column where categorized data is stored (string)
+        weight_col: Name of column where data that midpoint should be weighted by is stored (string)
+        show: Whether or not to display the midpoints and weighted midpoint for each unique value, sorted from earliest
+                  weighted midpoint to latest (Boolean, default False)
+    """
+
+    # Initialize mean and weighted mean variables
+    mean = []
+    mean_weighted = []
+
+    # For each unique value in the categorization column...
+    for item in df[cat_col].drop_duplicates().tolist():
+
+        # Select only tweets coded as the unique value
+        item_df = df.loc[df[cat_col] == item]
+
+        # Calculate the mean/midpoint of the selected tweets
+        item_df['tweet-created_at'] = item_df['tweet-created_at'].astype(np.int64)
+        item_mean = pd.to_datetime(item_df['tweet-created_at'].mean())
+        mean.append(item_mean)
+
+        # Calculate the diffusion-weighted mean/midpoint of the selected tweets
+        item_df['weighted'] = item_df['tweet-created_at'] * (item_df[weight_col] / item_df[weight_col].sum())
+        item_weighted = pd.to_datetime(item_df['weighted'].sum())
+        mean_weighted.append(item_weighted)
+
+    # Combine unique values, midpoint, and weighted midpoint in to a dataframe and sort by diffusion-weighted mean
+    mp_df = pd.DataFrame({cat_col: df[cat_col].drop_duplicates().tolist(), 'mean': mean,
+                          'mean_weighted': mean_weighted})
+    mp_df['diff'] = mp_df['mean_weighted'] - mp_df['mean']
+    mp_df.sort_values('mean_weighted', inplace=True)
+
+    # Show, if desired
+    if show is True:
+        print(mp_df)
+
+    return mp_df[cat_col].tolist()
+
+
 
 # </editor-fold>
 
@@ -2409,7 +2493,7 @@ def rt_rate_crosstab_plot(df, image_range, show=True, save=False):
         plt.show()
 
 
-def rt_reply_scatter(df_calc, df_final, show=True, save=False):
+def basic_scatter(df_calc, df_final, show=True, save=False):
     # This function creates two scatter plots - one based on data from the "calculated" tweet dataframe which is not
     # filtered and includes all outliers, and the second based on the "final" tweet dataframe which is filtered. The
     # scatter plot has retweet count as the x-axis and reply count as the y-axis. The user can choose whether to show
@@ -2445,6 +2529,136 @@ def rt_reply_scatter(df_calc, df_final, show=True, save=False):
     if show is True:
         plt.show()
 
+
+def scatter_size(df):
+    """
+    Plots a retweet-reply scatter plot where the area of the points are proportional to the number of occurences of
+        that retweet/reply combination, and where the axes use the "symlog" scale in order to show all of the data in
+        a compact manor
+
+    Parameters:
+        df: A tweet dataframe with retweet and reply data (Pandas dataframe)
+    """
+
+    # Count the occurence of each unique retweet/reply count combination
+    gb = df.groupby(['diffusion-rt_count', 'diffusion-reply_count'])['tweet-id_trunc']. \
+        size().reset_index().rename(columns={'tweet-id_trunc': 'count'})
+
+    # Create a scatter plot where the size of the scatter is proportional to the number of occurences of each point
+    fig, ax = plt.subplots(figsize=(7.5, 7.5))
+    c = '#69d'
+    ax.scatter(gb['diffusion-rt_count'], gb['diffusion-reply_count'], c='#69d', edgecolor='black', linewidth=0.25,
+               alpha=0.5, s=gb['count'] * 25)
+
+    # Set the x and y scales to "symlog" in order to display zero values while maintaining the compactness of the log
+    # display
+    ax.set_yscale('symlog')
+    ax.set_xscale('symlog')
+
+    # Set axis limits and labels
+    ax.set_ylim(bottom=-1)
+    ax.set_xlim(left=-1)
+    ax.set_xlabel('Retweets', fontsize=14, labelpad=10)
+    ax.set_ylabel('Replies', fontsize=14, labelpad=10)
+    ax.tick_params(axis='both', which='major', labelsize=14)
+
+    # Display a grid
+    ax.grid(alpha=0.5)
+
+    # Manually set legend for size values.
+    size = [1, 10, 100]
+    legend_elements2 = [
+        Line2D([0], [0], marker='o', color='w', markeredgecolor='black', markerfacecolor='w', label=str(size[0]),
+               markersize=math.sqrt(size[0] * 25)),
+        Line2D([0], [0], marker='o', color='w', markeredgecolor='black', markerfacecolor='w', label=str(size[1]),
+               markersize=math.sqrt(size[1] * 25)),
+        Line2D([0], [0], marker='o', color='w', markeredgecolor='black', markerfacecolor='w', label=str(size[2]),
+               markersize=math.sqrt(size[2] * 25))]
+    ax.legend(handles=legend_elements2, loc='upper left', bbox_to_anchor=[0.15, -0.12], ncol=4, borderpad=1.5,
+              fontsize=14)
+    fig.subplots_adjust(bottom=0.2, left=0.15, right=0.95)
+
+    plt.show()
+
+
+def scatter_kde(df):
+    """
+    Plots a retweet-reply scatter plot where the color of the points are based on a Gaussian kernel density estimate,
+        and where the axes use the log scale in order to show the data in a compact manor
+
+    Parameters:
+        df: A tweet dataframe with retweet and reply data (Pandas dataframe)
+    """
+
+    # Define x (retweets), y (replies), and z (the Gaussian kernel density estimate of the distribution)
+    x = df['diffusion-rt_count'].to_numpy()
+    y = df['diffusion-reply_count'].to_numpy()
+    xy = np.vstack([x, y])
+    z = gaussian_kde(xy)(xy)
+
+    # Sort the values so that higher values always display on top of smaller values
+    idx = z.argsort()
+    x, y, z = x[idx], y[idx], z[idx]
+
+    # Plot the scatter, using a Seaborn colormap to display the kernel density estimate
+    fig, ax = plt.subplots(figsize=(7.5, 5))
+    cmap = ListedColormap(sns.color_palette("Greens").as_hex())
+    sc = ax.scatter(x, y, c=z, s=50, cmap=cmap, edgecolor=None)
+
+    # Set the x and y scales to "log"
+    ax.set_yscale('log')
+    ax.set_xscale('log')
+
+    # Set the x and y limits and labels
+    ax.set_ylim(bottom=0.5)
+    ax.set_xlim(left=0.5)
+    ax.set_xlabel('Retweets', fontsize=14)
+    ax.set_ylabel('Replies', fontsize=14)
+    ax.tick_params(axis='both', which='major', labelsize=14)
+
+    # Create a title and colorbar for the figure
+    ax.set_title('All tweets', fontsize=18)
+    fig.colorbar(sc)
+
+    plt.show()
+
+
+def scatter_transparent(df):
+    """
+    Plots a retweet-reply scatter plot where every point is plotted with low transparency, so that points with many
+        overlaps show up darker, and where the axes use the symlog scale in order to show all of the data in a compact
+        manor
+
+    Parameters:
+        df: A tweet dataframe with retweet and reply data (Pandas dataframe)
+    """
+
+    # Plot the retweet-reply scatter, with a low alpha for each point
+    fig2, ax = plt.subplots(figsize=(7.5, 5))
+    ax.scatter(df['diffusion-rt_count'], df['diffusion-reply_count'], c='green', alpha=0.1)
+
+    # Set the x and y scales to "symlog" in order to show all data (including zero values) while maintaining the
+    # compactness of a log scale
+    ax.set_yscale('symlog')
+    ax.set_xscale('symlog')
+
+    # Set axis limits and labels
+    ax.set_ylim(bottom=-0.5)
+    ax.set_xlim(left=-0.5)
+    ax.set_xlabel('Retweets', fontsize=14)
+    ax.set_ylabel('Replies', fontsize=14)
+    ax.tick_params(axis='both', which='major', labelsize=14)
+
+    # Set axis ticklabels to show as integers, not in scientific notation
+    for axis in [ax.xaxis, ax.yaxis]:
+        formatter = ScalarFormatter()
+        formatter.set_scientific(False)
+        axis.set_major_formatter(formatter)
+
+    # Set figure title
+    ax.set_title('All tweets', fontsize=18)
+
+    plt.show()
 
 def timeseries_line(df, freq, gb, sum_metric, dates, show=True, save=False):
     # This function creates a plot that displays the tweet count and the retweet count over time for each unique element
