@@ -21,8 +21,12 @@ import seaborn as sns
 
 
 def media_type_convert(df):
-    # Converts media type columns to a consistent standard across Twitter data sources. Returns dataframe with
-    # updated media type columns.
+    """
+    Converts media-type columns to a consistent standard
+
+    Parameters:
+        df: A Pandas dataframe of Twitter data
+    """
 
     # For missing data or JSON based dataframes, a single media-type column already exists. Modify it to distinguish
     # multiple image tweets from single image tweets, simplify the 'gif' title, and rename the column for
@@ -57,12 +61,15 @@ def media_type_convert(df):
 
 
 def media_url_convert(df):
-    # Reformats media URL column and splits in to seperate columns for each URL. Returns dataframe with updated
-    # media columns.
+    """
+    Reformats media URL column and splits in to seperate columns for each URL
+
+    Parameters:
+        df: A Pandas dataframe of Twitter data
+    """
 
     # The media URL column is stored differently based on where the data originates from. Loop through both options
     # to ensure the URL columns are converted regardless of how they are stored.
-
     media_url_cols = ['media-media_urls', 'tweet-media_urls']
     for url_col in media_url_cols:
         # If the column is in the dataframe, go ahead with conversion then end code. Else, move to the next column.
@@ -114,15 +121,19 @@ def media_url_convert(df):
 
 
 def tweet_type_convert(df):
-    # Converts tweet type columns (for deleted tweet, quote tweet, reply, retweet, and original tweet) in JSON-based
-    # Twitter dataframes to a single tweet type column. Returns df with new tweet type column and old tweet type
-    # columns removed.
+    """
+    Converts tweet type columns to a single tweet type column
+
+    Parameters:
+        df: A Pandas dataframe of Twitter data
+    """
 
     # Select columns which begin with 'tweet_types' and append to list. Convert columns from bool or object to int64
     tweet_types_cols = []
     for col in df.columns:
         if col[:11] == 'tweet_types':
             tweet_types_cols.append(col)
+            df[col] = df[col].fillna(0)
             df[col] = df[col].astype('int64')
 
     # Create tweet type column by assessing the max value of the tweet type columns for each row and returning the
@@ -172,40 +183,37 @@ def himn_convert(file):
 
     # Remove extraneous columns
     drop_cols = ['concat_key', 'concat_key.1', 'rel_X_fore_Harvey', 'threat_sum', 'type_sum', 'type_WW_RS',
-                 'type_WW_text', 'time_Irma', 'rel_Irma', 'fore_Irma']
+                 'type_WW_text', 'time_Irma', 'rel_Irma', 'fore_Irma', 'time_Harvey']
     diff_cols = [col for col in himn_df.columns if col[:9] == 'diffusion']
     threat_cols = [col for col in himn_df.columns if col[:6] == 'threat']
-    himn_df.drop(columns=drop_cols + diff_cols + threat_cols, inplace=True)
+    himn_df.drop(columns=drop_cols + diff_cols + threat_cols, errors='ignore', inplace=True)
 
     # Manually change image name types to change source to branding and replace second underscores with hyphens. Also
     # change diffusion-retweet column to diffusion-rt.
     old_cols = ['source_off', 'source_non-off', 'type_key_msg', 'type_threat_impact', 'type_conv_out',
                 'type_meso_disc', 'type_rain_fore', 'type_rain_out', 'type_riv_flood', 'type_other_fore',
-                'type_other_non-fore', 'threat_trop_gen', 'threat_rain_flood', 'diffusion-retweet_count']
+                'type_other_non-fore', 'threat_trop_gen', 'threat_rain_flood', 'diffusion-retweet_count', 'rel_Harvey',
+                'fore_Harvey']
     new_cols = ['branding_off', 'branding_unoff', 'type_key-msg', 'type_threat-impact',
                 'type_conv-out', 'type_meso-disc', 'type_rain-fore', 'type_rain-out', 'type_riv-flood',
                 'type_other-fore', 'type_other-non-fore', 'threat_trop-gen', 'threat_rain-flood',
-                'diffusion-rt_count']
+                'diffusion-rt_count', 'filter-relevant', 'filter-forecast']
     himn_df.rename(columns=dict(zip(old_cols, new_cols)), inplace=True)
 
-    # Add or adjust column prefixes.
-    old_cols = []
-    new_cols = []
-    for col in himn_df.columns:
-        user_coded_cols = ['agency', 'affiliation', 'scope']
-        if (col in user_coded_cols) is True:
-            old_cols.append(col)
-            new_cols.append('user-' + col)
-        if col[:11] == 'tweet-user_':
-            old_cols.append(col)
-            new_cols.append('user-' + col[11:])
-        if col[:4] == 'time' or col[:4] == 'rel_' or col[:4] == 'fore':
-            old_cols.append(col)
-            new_cols.append('tweet-' + col)
-        if col[:4] == 'bran' or col[:4] == 'lang' or col[:4] == 'type' or col[:4] == 'thre':
-            old_cols.append(col)
-            new_cols.append('image-' + col)
+    # Add or adjust column prefixes for columns
+    user_cols = ['agency', 'affiliation', 'scope']
+    new_user_cols = ['user-' + col for col in user_cols]
 
+    tweet_user_cols = [col for col in himn_df.columns if col[:11] == 'tweet-user_']
+    new_tweet_user_cols = ['user-' + col[11:] for col in tweet_user_cols]
+
+    image_cols = [col for col in himn_df.columns if col[:4] == 'bran' or col[:4] == 'lang' or col[:4] == 'type' or
+                  col[:4] == 'thre']
+    new_image_cols = ['image-' + col for col in image_cols]
+
+    # Rename columns
+    old_cols = user_cols + tweet_user_cols + image_cols
+    new_cols = new_user_cols + new_tweet_user_cols + new_image_cols
     new_cols = [col.lower() for col in new_cols]
     himn_df.rename(columns=dict(zip(old_cols, new_cols)), inplace=True)
 
@@ -221,11 +229,14 @@ def himn_convert(file):
     himn_df['tweet-created_at'] = himn_df['tweet-created_at'].dt.tz_localize('UTC')
     himn_df['tweet-created_at'] = himn_df['tweet-created_at'].dt.strftime('%Y-%m-%d %H:%M:%S%z')
 
-    # Filter data
-    himn_df = himn_df.loc[himn_df['tweet-rel_harvey'] == '1']
-    himn_df = himn_df.loc[himn_df['tweet-fore_harvey'] == '1']
-    himn_df = himn_df.loc[(himn_df['user-scope'] == 'Local - Harvey') |
-                          (himn_df['user-scope'] == 'National/International')]
+    # Create risk image filter column
+    himn_df['filter-risk'] = 1
+
+    # Format forecast and relevance filter codes to be either 1, 0, or nan.
+    himn_df.loc[(himn_df['filter-relevant'] != 1) & (himn_df['filter-relevant'] != '1'), 'filter-relevant'] = 0
+    himn_df.loc[himn_df['filter-relevant'] == '1', 'filter-relevant'] = 1
+    himn_df.loc[(himn_df['filter-forecast'] != 1) & (himn_df['filter-forecast'] != '1'), 'filter-forecast'] = 0
+    himn_df.loc[himn_df['filter-forecast'] == '1', 'filter-forecast'] = 1
 
     return himn_df
 
@@ -255,23 +266,33 @@ def json_convert(file):
     return json_data_df
 
 
-def old_missing_convert(file, orig_file):
+def old_missing_convert(all_file, fore_file, orig_file):
     """
-    Convert a datafile of new tweet data uncovered in summer 2020 to a dataframe, compatible for merging with other
-        tweet data
+    Merges two datafiles of new tweet data uncovered in summer 2020, one with filter coding (e.g. risk, relevance,
+        and forecast) and one with full coded images, to a dataframe, compatible for merging with other tweet data
 
     Parameters:
-        file: Filename/location of missing tweet data uncovered in summer 2020 (string)
+        all_file: Filename/location of all missing tweet data uncovered in summer 2020, coded for filtering
+                      criteria (string)
+        fore_file: Filename/location of forecast missing tweet data uncovered in summer 2020, fully coded for image
+                       branding, type, language, and threat
         orig_file: Filename/location of originators, which includes scope, affiliation, and agency codes for each
                        originator (string)
     """
 
-    # Read in old missing data (created via image coding package in summer/fall 2020).
-    old_missing_df = pd.read_csv(file, encoding='UTF-8')
+    # Read in both old missing datafiles and merge together
+    old_missing = pd.read_csv(all_file)
+    old_missing_fore = pd.read_csv(fore_file)
+    old_missing_df = pd.merge(old_missing[['id', 'risk image', 'relevant', 'forecast', 'coded']], old_missing_fore,
+                              how='left', on='id')
+
+    # Filter to only include newly discovered tweets
+    old_missing_df = old_missing_df.loc[old_missing_df['coded'] == False]
 
     # Remove extraneous columns
     threat_cols = [col for col in old_missing_df.columns if col[:6] == 'threat']
-    drop_cols = ['geolocation', 'user.account_created_at.$date', 'favorites_count', 'user.description'] + threat_cols
+    drop_cols = \
+        ['geolocation', 'user.account_created_at.$date', 'favorites_count', 'user.description', 'coded'] + threat_cols
     old_missing_df.drop(columns=drop_cols, inplace=True)
 
     for col in old_missing_df.columns:
@@ -291,7 +312,8 @@ def old_missing_convert(file, orig_file):
                                'source_unoff': 'image-branding_unoff', 'created_at-$date': 'tweet-created_at',
                                'id': 'tweet-id', 'image-type_ww_meso-disc': 'image-type_ww_md', 'text': 'tweet-text',
                                'media_url1': 'media-url1', 'media_url2': 'media-url2', 'media_url3': 'media-url3',
-                               'media-media_urls': 'media-urls'}, inplace=True)
+                               'media-media_urls': 'media-urls', 'risk image': 'filter-risk',
+                               'relevant': 'filter-relevant', 'forecast': 'filter-forecast'}, inplace=True)
 
     # Create truncated id column.
     old_missing_df['tweet-id_trunc'] = old_missing_df['tweet-id'].astype(str).str[:15]
@@ -300,14 +322,8 @@ def old_missing_convert(file, orig_file):
     old_missing_df = media_type_convert(old_missing_df)
     old_missing_df = tweet_type_convert(old_missing_df)
 
-    # Create time, relevance and forecast columns
-    old_missing_df['tweet-time_harvey'] = 1
-    old_missing_df['tweet-fore_harvey'] = 1
-    old_missing_df['tweet-rel_harvey'] = 1
-
     # Convert created_at column to format that matches HIMN and JSON datasets
     old_missing_df['tweet-created_at'] = pd.to_datetime(old_missing_df['tweet-created_at'], infer_datetime_format=True)
-    old_missing_df['tweet-created_at'] = old_missing_df['tweet-created_at'].dt.tz_localize('UTC')
     old_missing_df['tweet-created_at'] = old_missing_df['tweet-created_at'].dt.strftime('%Y-%m-%d %H:%M:%S%z')
 
     # Merge missing data with originator data to include coded originator data.
@@ -331,8 +347,8 @@ def new_missing_convert(file, orig_file):
     new_missing_df = pd.read_csv(file, encoding='UTF-8')
 
     # Remove extraneous columns
-    new_missing_drop_cols = ['geolocation', 'user.account_created_at', 'link', 'hrisk_img', 'image_count', 'id.trunc']
-    new_missing_df.drop(columns=new_missing_drop_cols, inplace=True)
+    new_missing_drop_cols = ['geolocation', 'user.account_created_at', 'link', 'image_count', 'id.trunc']
+    new_missing_df.drop(columns=new_missing_drop_cols, errors='ignore', inplace=True)
 
     for col in new_missing_df.columns:
         if col[:7] == 'Unnamed':
@@ -346,7 +362,7 @@ def new_missing_convert(file, orig_file):
                   'meso-disc', 'rain-fore', 'rain-out', 'riv-flood', 'spag', 'text-img', 'model', 'evac',
                   'other-fore', 'other-non-fore', 'video']
     ww_cols = ['ww_exp', 'ww_cone', 'ww_md']
-    other_cols = ['official', 'unofficial', 'spanish', 'forecast', 'relevant']
+    other_cols = ['official', 'unofficial', 'spanish', 'hrisk_img', 'forecast', 'relevant']
 
     new_cols = []
     for col in new_missing_df.columns:
@@ -364,9 +380,9 @@ def new_missing_convert(file, orig_file):
     # Rename other columns
     new_missing_df.rename(columns={'image-type_text-img': 'image-type_text', 'official': 'image-branding_off',
                                'unofficial': 'image-branding_unoff', 'spanish': 'image-lang_spanish',
-                               'forecast': 'tweet-fore_harvey', 'relevant': 'tweet-rel_harvey',
+                               'forecast': 'filter-forecast', 'relevant': 'filter-relevant',
                                'tweet_type': 'tweet-type', 'text': 'tweet-text', 'created_at': 'tweet-created_at',
-                               'id': 'tweet-id'}, inplace=True)
+                               'id': 'tweet-id', 'hrisk_img': 'filter-risk'}, inplace=True)
 
     # Create truncated id column.
     new_missing_df['tweet-id_trunc'] = new_missing_df['tweet-id'].astype(str).str[:15]
@@ -374,9 +390,6 @@ def new_missing_convert(file, orig_file):
     # Create and/or edit media URL and media type columns.
     new_missing_df = media_url_convert(new_missing_df)
     new_missing_df = media_type_convert(new_missing_df)
-
-    # Create time column for Harvey
-    new_missing_df['tweet-time_harvey'] = 1
 
     # Convert created_at column to format that matches HIMN and JSON datasets
     new_missing_df['tweet-created_at'] = pd.to_datetime(new_missing_df['tweet-created_at'], infer_datetime_format=True)
@@ -388,100 +401,120 @@ def new_missing_convert(file, orig_file):
     return new_missing_df
 
 
-def merge(himn_file, json_file, old_missing_file, new_missing_file, orig_file):
-    # -----------------------------------------------------------------------------------------------------------------#
-    # Given file names for HIMN/CSV Twitter data file and JSON Twitter data file, applies data transformations to align
-    # dataframes and merges to create one unified dataframe (with all coded data and tweet-ids intact). Optionally takes
-    # missing data file created via Python image coding and concatenates with HIMN/CSV dataframe before merge.
-    # -----------------------------------------------------------------------------------------------------------------#
+def merge(him_all_file, himn_coded_file, old_missing_all_file, old_missing_fore_file, new_missing_file, orig_file,
+          start, end):
+    """
+    Merges multiple sources of Twitter data to create a unified dataset
+
+    Parameters:
+        him_all_file: Filename/location of CSV datafile containing all HIM tweet data (N = 116k) (string)
+        himn_coded_file: Filename/location of CSV datafile with coded data for original risk-image dataset (N = 16k)
+                             (string)
+        old_missing_all_file: Filename/location of CSV datafile with all data collected during summer 2020 after
+                                  noticing lack of tweets in Aug 26 evening timeframe (N ~ 500). Includes codes for
+                                  filtering criteria (string)
+        old_missing_fore_file: Filename/location of CSV datafile with fully coded forecast data for old missing data
+                                   (N = 113) (string)
+        new_missing_file: Filename/location of CSV datafile with fully coded data for new/missing data, obtained from
+                              HIM all file obtained December 2020 (N ~5000). Includes filtering codes and image codes
+                              (string)
+        orig_file: Filename/location of CSV datafile with coded originators/sources (string)
+        start: Storm start time for time-filtering (tz-aware (UTC) datetime object)
+        end: Storm end time for time-filtering (tz-aware (UTC) datetime object)
+    """
 
     # Reorganize and recalculate datasets to include the calculated properties and column names (excluding diffusion
     # calculations)
-    himn_df = himn_convert(himn_file)
-    json_data_df = json_convert(json_file)
-    old_missing = old_missing_convert(old_missing_file, orig_file)
+    him_116k = new_missing_convert(him_all_file, orig_file)
+    himn_16k = himn_convert(himn_coded_file)
+    old_missing = old_missing_convert(old_missing_all_file, old_missing_fore_file, orig_file)
     new_missing = new_missing_convert(new_missing_file, orig_file)
 
-    # Merge JSON tweet-ids with HIMN data in order to have full tweet-ids for all tweets
-    himn_df = pd.merge(himn_df, json_data_df[['tweet-id', 'tweet-id_trunc']], on='tweet-id_trunc', how='left',
-                       suffixes=('_y', ''))
-    himn_df.drop(himn_df.filter(regex='_y$').columns.tolist(), axis=1, inplace=True)
+    # Concatenate missing datasets with HIMN (16k) data to obtain a full set of coded data.
+    coded = pd.concat([himn_16k, old_missing, new_missing], join='outer')
 
-    # Concatenate missing datasets with HIMN data to obtain a full set of coded data.
-    tweets_harvey_final = pd.concat([himn_df, old_missing, new_missing], join='outer')
-
-    # Count the number of duplicates in the tweet-id_trunc columns of the dataframes to be merged.
-    dup_df = pd.DataFrame()
-    dup_df['himn_dup'] = tweets_harvey_final.duplicated('tweet-id_trunc')
-    dup_df['json_dup'] = json_data_df.duplicated('tweet-id_trunc')
-    dup_count_tot = len(dup_df.loc[(dup_df['himn_dup'] == True) | (dup_df['json_dup'] == True)])
-    print('Duplicates removed: ' + str(dup_count_tot))
-
-    # Drop any duplicates
-    tweets_harvey_final.drop_duplicates('tweet-id_trunc', inplace=True)
-    json_data_df.drop_duplicates('tweet-id_trunc', inplace=True)
-
-    # Replace empty values with zeros in numeric columns.
-    #numeric_columns = himn_df.select_dtypes(include=['number']).columns
-    #tweets_harvey_final[numeric_columns] = tweets_harvey_final[numeric_columns].fillna(0)
+    # Merge coded data with 116k HIM dataset
+    tweets_harvey_all = pd.merge(him_116k, coded, on='tweet-id_trunc', how='left', suffixes=('', '_y'))
+    tweets_harvey_all.drop(tweets_harvey_all.filter(regex='_y$').columns.tolist(), axis=1, inplace=True)
 
     # Create a code for video based on the media type column.
-    tweets_harvey_final['image-type_video'] = [1 if x == 'video' else 0 for x in tweets_harvey_final['media-type']]
+    tweets_harvey_all['image-type_video'] = [1 if x == 'video' else 0 for x in tweets_harvey_all['media-type']]
 
     # Remove overlaps when video is coded.
-    for col in tweets_harvey_final.columns:
+    for col in tweets_harvey_all.columns:
         if (col[:10] == 'image-type') & (col != 'image-type_video'):
-            tweets_harvey_final.loc[tweets_harvey_final['image-type_video'] == 1, col] = 0
+            tweets_harvey_all.loc[tweets_harvey_all['image-type_video'] == 1, col] = 0
 
     # Create an English language column to complement the Spanish language column.
-    tweets_harvey_final.loc[tweets_harvey_final['image-lang_spanish'] == 1, 'image-lang_english'] = 0
-    tweets_harvey_final.loc[tweets_harvey_final['image-lang_spanish'] == 0, 'image-lang_english'] = 1
+    tweets_harvey_all.loc[tweets_harvey_all['image-lang_spanish'] == 1, 'image-lang_english'] = 0
+    tweets_harvey_all.loc[tweets_harvey_all['image-lang_spanish'] == 0, 'image-lang_english'] = 1
 
     # Create a tweet URL column by splitting the last 23 digits from the tweet text column.
-    tweets_harvey_final['tweet-url'] = tweets_harvey_final['tweet-text'].str.slice(start=-23)
-    tweets_harvey_final['tweet-text'] = tweets_harvey_final['tweet-text'].str.slice(stop=-23)
+    tweets_harvey_all['tweet-url'] = tweets_harvey_all['tweet-text'].str.slice(start=-23)
+    tweets_harvey_all['tweet-text'] = tweets_harvey_all['tweet-text'].str.slice(stop=-23)
 
-    return tweets_harvey_final
+    # Create time-filter column, using provided start and end dates
+    tweets_harvey_all['tweet-created_at'] = pd.to_datetime(tweets_harvey_all['tweet-created_at'],
+                                                           format='%Y-%m-%d %H:%M:%S%z')
+    tweets_harvey_all.loc[(tweets_harvey_all['tweet-created_at'] >= start) &
+                          (tweets_harvey_all['tweet-created_at'] <= end), 'filter-time'] = 1
+
+    # Create source-filter column
+    tweets_harvey_all.loc[
+        (tweets_harvey_all['user-scope'] == 'Local - Harvey') |
+        ((tweets_harvey_all['user-scope'] == 'National/International') &
+         ((tweets_harvey_all['user-affiliation'] == 'Gov - Wx - NWS') |
+          (tweets_harvey_all['user-affiliation'] == 'Media - Wx'))), 'filter-source'] = 1
+
+    return tweets_harvey_all
 
 
 def diff_calc_basic(df, diff_folder):
-    # Calculate diffusion metrics.
-    ids = df['tweet-id'].astype(str).to_list()
-    rt = []
-    reply = []
-    qt = []
+    """
+    Calculate retweet, quote tweet, combined RT and QT, and reply counts for provided Twitter dataset
+
+    Parameters:
+        df: A dataframe of Twitter data (Pandas dataframe)
+        diff_folder: Folder location where JSON diffusion data for each forecast tweet are stored (string)
+    """
+
+    # Format ids as strings and make index of dataframe.
+    df.reset_index(inplace=True)
+    df['tweet-id'] = df['tweet-id'].astype(str)
+    df.set_index('tweet-id', inplace=True)
+
+    # Initialize diffusion metrics
+    df['diffusion-rt_count'] = ''
+    df['diffusion-qt_count'] = ''
+    df['diffusion-reply_count'] = ''
     n = 0
-    for tweet_id in ids:
-        filename = tweet_id + '.json'
-        direc = diff_folder
-        if filename in os.listdir(direc):
-            with open(direc + '\\' + filename, 'r') as f:
+
+    # Calculate diffusion for each tweet in diffusion folder.
+    for filename in os.listdir(diff_folder):
+        if (filename[:18] in df.index) is True:
+            with open(diff_folder + '\\' + filename, 'r') as f:
                 data = json.load(f)
 
                 if len(data) != 0:
                     # Convert data for each tweet-id in to a DataFrame (but only if tweet has any diffusion).
                     data_df = pd.json_normalize(data)
 
-                    rt.append(len(data_df.loc[data_df['tweet_types.retweet'] != 0]))
-                    qt.append(len(data_df.loc[data_df['tweet_types.quote_tweet'] != 0]))
-                    reply.append(len(data_df.loc[data_df['tweet_types.reply'] != 0]))
+                    # Calculate diffusion counts for RT, QT, and replies.
+                    df.loc[filename[:18], 'diffusion-rt_count'] = len(data_df.loc[data_df['tweet_types.retweet'] != 0])
+                    df.loc[filename[:18], 'diffusion-qt_count'] = \
+                        len(data_df.loc[data_df['tweet_types.quote_tweet'] != 0])
+                    df.loc[filename[:18], 'diffusion-reply_count'] = len(data_df.loc[data_df['tweet_types.reply'] != 0])
 
                 else:
-                    rt.append(0)
-                    qt.append(0)
-                    reply.append(0)
-        else:
-            rt.append(0)
-            qt.append(0)
-            reply.append(0)
+                    df.loc[filename[:18], 'diffusion-rt_count'] = 0
+                    df.loc[filename[:18], 'diffusion-qt_count'] = 0
+                    df.loc[filename[:18], 'diffusion-reply_count'] = 0
 
         # Track progress
         n += 1
-        print(str(n) + '/' + str(len(os.listdir(direc))))
+        print(str(n) + '/' + str(len(os.listdir(diff_folder))))
 
-    df['diffusion-qt_count'] = qt
-    df['diffusion-reply_count'] = reply
-    df['diffusion-rt_count'] = rt
+    # Calculate combined RT/QT count
     df['diffusion-combined_rt_qt_count'] = df['diffusion-rt_count'] + df['diffusion-qt_count']
 
     return df
@@ -501,6 +534,7 @@ def tweet_diffusion_calc(tweet_df, data_folder, diff_folder):
     diff_metrics = ['retweet', 'quote_tweet', 'reply']
 
     # Format ids as strings and make index of dataframe.
+    tweet_df.reset_index(inplace=True)
     tweet_df['tweet-id'] = tweet_df['tweet-id'].astype(str)
     tweet_df.set_index('tweet-id', inplace=True)
 
@@ -749,17 +783,36 @@ def image_filter(df):
 
 # This function is used as part of the filtering process but can also be useful for narrowing the final dataset further.
 def tweet_filter(tweet_df, **kwargs):
-    # This function filters a Twitter dataframe based on several optional user inputs. These user inputs can limit the
-    # database to only include retweet or reply values in a certain range, only include certain images or sources,
-    # limit the date range of the database, or only include certain columns in the dataframe.
+    """
+    Filter a tweet dataframe based on user-provided criteria
+
+    Parameters:
+        tweet_df: A Pandas dataframe of Twitter data
+
+    Keyword Arguments:
+        filters: A list of filtering steps to commit (choose among 'time', 'source', 'risk', 'relevant', and 'forecast')
+        rt_range: A range of values between lower and upper bounds for retweet values (useful for filtering outliers)
+        reply_range: A range of values between lower and upper bounds for reply values
+        image_range: A list of images to include in the filtered dataset
+        source_range: A list of sources/originator groupings to include in the filtered dataset
+        date_range: A list with a start and end-time to filter data between
+        cols: A list of columns to include in the filtered dataset
+
+    """
 
     # Read in optional filtering arguments.
+    filters = kwargs.get('filters', None)
     rt_range = kwargs.get('rt_range', None)
     reply_range = kwargs.get('reply_range', None)
     image_range = kwargs.get('image_range', None)
     source_range = kwargs.get('source_range', None)
     date_range = kwargs.get('date_range', None)
     cols = kwargs.get('cols', None)
+
+    if filters is not None:
+        # Filter dataset progressively, based on user-provided list of criteria to filter on
+        for f in filters:
+            tweet_df = tweet_df[(tweet_df['filter-' + f] == 1) | (tweet_df['filter-' + f] == '1')]
 
     if rt_range is not None:
         # Filter dataset to only include tweets in a user-given range of retweet values.
@@ -1307,13 +1360,37 @@ def cat_midpoint(df, cat_col, weight_col, show=False):
     return mp_df[cat_col].tolist()
 
 
-
 # </editor-fold>
 
-
 # <editor-fold desc="Figures">
+
+
 # Figure 1: sankey diagram (re-code)
-def sankey():
+def sankey(df):
+    """
+    Produces a Sankey plot visualizing the filtering of the tweet data
+
+    Parameters:
+        df: A Pandas dataframe of Twitter data
+    """
+
+    # Initialize filtering data
+    df_filter = df.copy()
+    filters = ['time', 'source', 'risk', 'relevant', 'forecast']
+    f_tweet = []
+    f_source = []
+
+    # Create tweet and source counts for each filtering step, for use in Sankey diagram
+    for i in np.arange(0, len(filters) - 1):
+        df_filter = df_filter.loc[df_filter['filter-' + filters[i]] == 1]
+        df_filter2 = df_filter.loc[df_filter['filter-' + filters[i+1]] == 1]
+        f_tweet.append(len(df_filter2))
+        f_tweet.append(len(df_filter) - len(df_filter2))
+        f_source.append(len(df_filter2['user-screen_name'].drop_duplicates().tolist()))
+        f_source.append(len(df_filter['user-screen_name'].drop_duplicates().tolist()) -
+                        len(df_filter2['user-screen_name'].drop_duplicates().tolist()))
+
+    # Plot Sankey diagram (outputs in a browser window)
     fig = go.Figure(data=[go.Sankey(
         node=dict(
             pad=15,
@@ -1321,21 +1398,25 @@ def sankey():
             line=dict(
                 color='black',
                 width=0.5),
-            label=['Time-filtered dataset (47342)', '', 'Source-filtered (14284)', '', '',
-                   'Risk-image filtered (4457)', '', 'Relevance-filtered (4214)', '', 'Forecast-filtered (3330)'],
+            label=['Time-filtered dataset (' + str(sum(f_tweet[:2])) + '/' + str(sum(f_source[:2])) + ')', '',
+                   'Source (' + str(sum(f_tweet[2:4])) + '/' + str(sum(f_source[2:4])) + ')', '', '',
+                   'Risk-image (' + str(sum(f_tweet[4:6])) + '/' + str(sum(f_source[4:6])) + ')', '',
+                   'Relevance (' + str(sum(f_tweet[6:8])) + '/' + str(sum(f_source[6:8])) + ')', '',
+                   'Forecast (' + str(f_tweet[6]) + '/' + str(f_source[6]) + ')'],
             color=['black', 'black', 'black', '#b01e36', 'black', 'black', 'black', 'black', 'black', '#251fcf']),
 
         link=dict(
             source=[0, 0, 2, 2, 5, 5, 7, 7],
             target=[2, 3, 5, 3, 7, 3, 9, 3],
-            value=[14284, 33058, 4457, 9827, 4214, 243, 3330, 884],
+            value=f_tweet,
             color=['#b0afcc', '#dea9b1', '#b0afcc', '#dea9b1', '#b0afcc', '#dea9b1', '#b0afcc', '#dea9b1']))])
 
-    fig.update_layout(title_text='Progressive Data Filtering: Tweet Count', font_size=40, font_color='black')
+    fig.update_layout(title_text='Data Filtering (Tweet Count/Source Count)', font_size=40, font_color='black')
     fig.show()
 
+
 # NEW Figure 3
-def timeseries_ww_wwexp_nonww(df, freq, dates, show=True, save=False):
+def timeseries_ww_wwexp_nonww(df, images, freq, dates, median, show=True, save=False):
     # This function displays four subplots. The first subplot shows the number of tweets with watch/warning,
     # watch/warning (experimental), and non-watch/warning images over time as a stacked bar chart, where the width of
     # the bar corresponds to a user-provided time frequency (in minutes). The subsequent subplots display summary
@@ -1359,9 +1440,9 @@ def timeseries_ww_wwexp_nonww(df, freq, dates, show=True, save=False):
 
     # Slice the tweet dataframe into three seperate dataframes which include only watch/warning (non-exp),
     # watch/warning (exp), and non-watch/warning images respectively.
-    df_nonww = tweet_filter(df, image_range=['Multiple', 'Other - Non-Forecast', 'Other - Forecast', 'Key Messages',
-                                             'Model Output', 'Rainfall Forecast/Outlook', 'River Flood Forecast',
-                                             'SPC Convective Products', 'Cone'][::-1])
+    images_nonww = [image for image in images if (image != 'Watch/Warning') & (image != 'Watch/Warning (Exp)')]
+    print(images_nonww)
+    df_nonww = tweet_filter(df, image_range=images_nonww)
     df_ww = tweet_filter(df, image_range=['Watch/Warning'])
     df_ww_exp = tweet_filter(df, image_range=['Watch/Warning (Exp)'])
 
@@ -1383,10 +1464,11 @@ def timeseries_ww_wwexp_nonww(df, freq, dates, show=True, save=False):
     sum_reply_ww = df_ww.groupby(pd.Grouper(freq=freq_str)).sum()['diffusion-reply_count']
     sum_reply_ww_exp = df_ww_exp.groupby(pd.Grouper(freq=freq_str)).sum()['diffusion-reply_count']
 
-    # Calculate the median retweets for each sliced dataframe for each time bin.
-    med_rt_nonww = df_nonww.groupby(pd.Grouper(freq=freq_str)).median()['diffusion-rt_count']
-    med_rt_ww = df_ww.groupby(pd.Grouper(freq=freq_str)).median()['diffusion-rt_count']
-    med_rt_ww_exp = df_ww_exp.groupby(pd.Grouper(freq=freq_str)).median()['diffusion-rt_count']
+    if median is True:
+        # Calculate the median retweets for each sliced dataframe for each time bin.
+        med_rt_nonww = df_nonww.groupby(pd.Grouper(freq=freq_str)).median()['diffusion-rt_count']
+        med_rt_ww = df_ww.groupby(pd.Grouper(freq=freq_str)).median()['diffusion-rt_count']
+        med_rt_ww_exp = df_ww_exp.groupby(pd.Grouper(freq=freq_str)).median()['diffusion-rt_count']
 
     # Create a figure and axes, then twin the axes so there are two y-axes.
     fig, (ax0, ax1, ax2, ax3) = plt.subplots(4, 1, figsize=(11, 11))
@@ -1394,11 +1476,15 @@ def timeseries_ww_wwexp_nonww(df, freq, dates, show=True, save=False):
     ax5 = ax2.twinx()
     ax6 = ax3.twinx()
     axes = [ax0, ax1, ax2, ax3]
-    axes_twin = [ax4, ax5, ax6]
+
+    if median is True:
+        axes_twin = [ax4, ax5, ax6]
 
     # For each y-axis, share the bounds so that each subplot plots over the same y-values.
     ax1.get_shared_y_axes().join(ax1, ax2, ax3)
-    ax6.get_shared_y_axes().join(ax4, ax5, ax6)
+
+    if median is True:
+        ax6.get_shared_y_axes().join(ax4, ax5, ax6)
 
     # Create a figure and set plotting variables.
     w = freq / 1800
@@ -1433,11 +1519,12 @@ def timeseries_ww_wwexp_nonww(df, freq, dates, show=True, save=False):
     ax2.plot(sum_reply_ww.index + td, sum_reply_ww, color='maroon', linewidth=lw, label='Total Reply')
     ax3.plot(sum_reply_nonww.index + td, sum_reply_nonww, color='maroon', linewidth=lw, label='Total Reply')
 
-    # Scatter plots for median retweet information.
-    ax4.scatter(med_rt_ww_exp.index + td, med_rt_ww_exp, marker='o', facecolor='white', color='green',
+    if median is True:
+        # Scatter plots for median retweet information.
+        ax4.scatter(med_rt_ww_exp.index + td, med_rt_ww_exp, marker='o', facecolor='white', color='green',
                 label='Median RT')
-    ax5.scatter(med_rt_ww.index + td, med_rt_ww, marker='o', facecolor='white', color='orange', label='Median RT')
-    ax6.scatter(med_rt_nonww.index + td, med_rt_nonww, marker='o', facecolor='white', color='blue', label='Median RT')
+        ax5.scatter(med_rt_ww.index + td, med_rt_ww, marker='o', facecolor='white', color='orange', label='Median RT')
+        ax6.scatter(med_rt_nonww.index + td, med_rt_nonww, marker='o', facecolor='white', color='blue', label='Median RT')
 
     # Format major axes and labels.
     for ax in axes:
@@ -1450,11 +1537,12 @@ def timeseries_ww_wwexp_nonww(df, freq, dates, show=True, save=False):
         ax.legend(loc='upper left', fontsize=ls)
     ax0.set_ylabel('Tweet Count', fontsize=fs, labelpad=lp)
 
-    # Format secondary axes and labels.
-    for ax in axes_twin:
-        ax.tick_params(axis='y', labelsize=ls)
-        ax.set_ylabel('Median RT', fontsize=fs, labelpad=lp)
-        ax.legend(loc='upper right', fontsize=ls)
+    if median is True:
+        # Format secondary axes and labels.
+        for ax in axes_twin:
+            ax.tick_params(axis='y', labelsize=ls)
+            ax.set_ylabel('Median RT', fontsize=fs, labelpad=lp)
+            ax.legend(loc='upper right', fontsize=ls)
 
     # Add light gray lines at times of significance.
     date_plot = [x for x in dates if x != max(dates) and x != min(dates)]
