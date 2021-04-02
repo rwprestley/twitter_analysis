@@ -1,5 +1,11 @@
+# Basic data imports
 import pandas as pd
-from datetime import timedelta
+import numpy as np
+import json
+import os
+import webbrowser
+
+# Matplotlib imports
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 from matplotlib.patches import Patch
@@ -7,19 +13,21 @@ from matplotlib.lines import Line2D
 from matplotlib.colors import rgb2hex
 from matplotlib.colors import ListedColormap
 from matplotlib.ticker import ScalarFormatter
-import numpy as np
-import math
-from scipy import stats
-from scipy.stats import gaussian_kde
-import json
-import os
-import webbrowser
+
+# Other plotting imports
 import plotly.graph_objects as go
 import seaborn as sns
 
+# Math imports
+import math
+from scipy import stats
+from scipy.stats import gaussian_kde
+
+# Datetime imports
+from datetime import timedelta
+
+
 # <editor-fold desc="Data merging and filtering">
-
-
 def media_type_convert(df):
     """
     Converts media-type columns to a consistent standard
@@ -269,7 +277,7 @@ def json_convert(file):
 def old_missing_convert(all_file, fore_file, orig_file):
     """
     Merges two datafiles of new tweet data uncovered in summer 2020, one with filter coding (e.g. risk, relevance,
-        and forecast) and one with full coded images, to a dataframe, compatible for merging with other tweet data
+    and forecast) and one with full coded images, to a dataframe, compatible for merging with other tweet data
 
     Parameters:
         all_file: Filename/location of all missing tweet data uncovered in summer 2020, coded for filtering
@@ -335,7 +343,7 @@ def old_missing_convert(all_file, fore_file, orig_file):
 def new_missing_convert(file, orig_file):
     """
     Convert a datafile of new tweet data uncovered in December 2020 to a dataframe, compatabile for merging with other
-        tweet data
+    tweet data
 
     Parameters:
         file: Filename/location of missing tweet data uncovered in December 2020 (string)
@@ -521,12 +529,15 @@ def diff_calc_basic(df, diff_folder):
 
 
 def tweet_diffusion_calc(tweet_df, data_folder, diff_folder):
-    # Calculates counts and rates for each diffusion metric (retweet, reply, and quote tweet) for several different
-    # timeframes after the posting of the tweet. These calculated metrics are appended to a tweet dataframe as new
-    # columns. Required input: a dataframe with data for each tweet, a data folder where data is stored and saved, a
-    # diffusion folder within the data folder that contains diffusion data for each tweet as a seperate file, the column
-    # order that the calculated tweet_df should be ordered by, and a name to save the calculated tweet_df as
-    # (default is "tweets_harvey_calc").
+    """
+    Calculate tweet counts and rates for each diffusion metric for several different timeframes after the creation of
+    the tweet
+
+    Parameters:
+        tweet_df: A Pandas dataframe of Twitter data
+        data_folder: A string file location of the folder where Twitter data is stored
+        diff_folder: A string file location of the folder where Twitter diffusion data JSONs are stored
+    """
 
     print('creating columns...')
     # Define lists to be iterated through later.
@@ -844,144 +855,37 @@ def tweet_filter(tweet_df, **kwargs):
 
 
 # <editor-fold desc="Tables/Data Summaries">
-# Table 1
-def scope_counts(himn_file, missing_file, show=True, save=False):
-    # This function creates two tables. The first provides the number of tweets for each coded user scope for each
-    # filtering step, merging the values in the original datafile with missing data. The second table is the same,
-    # except that it displays the number of accounts.
-
-    # Required inputs: string datafile location for the HIMN file
-    # (e.g. 'harvey_irma_twitter_data.csv') and the missing datafile (e.g. 'tweets_harvey_missing.csv'). User can choose
-    # whether to show and/or save the tables.
-
-    # Of note - the missing file input is NOT the same as the missing file input when merging databases. The missing
-    # file here needs to include all of the missing input (not just the forecast content) and must include columns
-    # with binary codes for risk image, relevant, and forecast content.
-
-    # Define the unique scope values.
-    scopes = ['Local - Harvey', 'National/International', 'Local - Irma', 'Local - Not Harvey or Irma', 'Other/Unknown']
-
-    # Input HIMN dataset from csv.
-    himn = pd.read_csv(himn_file, low_memory=False, header=0, encoding="ISO-8859-1")
-    himn = himn.sort_values('tweet-user_screen_name')
-
-    # Input missing file dataset from csv (must include all data filtering coding).
-    missing = pd.read_csv(missing_file, low_memory=False, header=0, encoding="ISO-8859-1")
-    missing['user_screen_name'] = missing['user_screen_name'].str.lower()
-
-    # Progressively filter HIMN dataset.
-    himn_risk_image = himn
-    himn_time = himn_risk_image.loc[himn_risk_image['time_Harvey'] == 1]
-    himn_rel = himn_time.loc[himn_time['rel_Harvey'] == '1']
-    himn_fore = himn_rel.loc[himn_rel['fore_Harvey'] == '1']
-    himn_final = himn_fore.loc[
-        (himn_fore['scope'] == 'Local - Harvey') | (himn_fore['scope'] == 'National/International')]
-    himn_dfs = [himn_risk_image, himn_time, himn_rel, himn_fore, himn_final]
-
-    # Progressively filter missing dataset.
-    missing_risk_image = missing.loc[(missing['coded'] is False) & (missing['risk image'] == 1)]
-    missing_time = missing_risk_image
-    missing_rel = missing_time.loc[missing_time['relevant'] == 1]
-    missing_fore = missing_rel.loc[missing_rel['forecast'] == 1]
-    missing_final = missing_fore.loc[
-        (missing_fore['scope'] == 'Local - Harvey') | (missing_fore['scope'] == 'National/International')]
-    missing_dfs = [missing_risk_image, missing_time, missing_rel, missing_fore, missing_final]
-
-    # Calculate the total number of HIMN and missing tweets for each filtered dataset and each scope value. Sum the
-    # HIMN and missing numbers. Format as a dataframe.
-    tc_df = pd.DataFrame()
-    for i in range(0, len(himn_dfs)):
-        tc = himn_dfs[i].groupby(['scope'])['tweet-id'].count().add(missing_dfs[i].groupby(['scope'])['id'].count(),
-                                                                    fill_value=0)
-        tc_df = pd.concat((tc_df, tc), axis=1)
-    tc_df.columns = ['Risk Images', 'Time-filtered', 'Relevance-filtered', 'Forecast-filtered', 'Scope-filtered']
-    tc_df = tc_df.reindex(scopes)
-    tc_df.loc['Grand Total'] = tc_df.sum()
-    tc_df = tc_df.fillna(0)
-    tc_df = tc_df.astype(np.int64)
-
-    # Show the table, if desired.
-    if show is True:
-        print(tc_df)
-
-    # Save the table, if desired.
-    if save is True:
-        tc_df.to_csv('tweet_counts_scope.csv')
-
-    # Calculate the total number of unique HIMN and missing accounts for each filtered dataset and scope value. Sum the
-    # two. Format as a dataframe.
-    ac_df = pd.DataFrame()
-    ac_tot = None
-    for i in range(0, len(himn_dfs)):
-        ac_himn = []
-        ac_miss = []
-        for scope in scopes:
-
-            # Obtain a list of unique authoritative sources for each filtered dataset and scope combination between
-            # HIMN and missing datasets.
-            acts_himn = himn_dfs[i].loc[himn_dfs[i]['scope'] == scope]['tweet-user_screen_name'].unique().tolist()
-            acts_miss = missing_dfs[i].loc[missing_dfs[i]['scope'] == scope]['user_screen_name'].unique().tolist()
-
-            # Count the number of authoritative sources in HIMN dataset for each scope.
-            ac_himn.append(len(acts_himn))
-
-            # Compare each element in missing sources list to HIMN sources list. If the element is not in the HIMN list,
-            # add one.
-            n = 0
-            for missing_source in acts_miss:
-                if (missing_source in acts_himn) is True:
-                    n += 0
-                else:
-                    n += 1
-
-            # Obtain a count of unique authoritive sources in missing dataset. Add to number calculated for HIMN
-            # dataset.
-            ac_miss.append(n)
-            ac_tot = [sum(x) for x in zip(ac_himn, ac_miss)]
-
-        ac_df[str(i)] = ac_tot
-    ac_df.columns = ['Risk Images', 'Time-filtered', 'Relevance-filtered', 'Forecast-filtered', 'Scope-filtered']
-    ac_df.index = scopes
-    ac_df.loc['Grand Total'] = ac_df.sum()
-
-    # Show the table, if desired.
-    if show is True:
-        print(ac_df)
-
-    # Save the figure, if desired.
-    if save is True:
-        ac_df.to_csv('account_counts_scope.csv')
-
-
-# Table 2/3/4
 def descr_stats(df, columns, values, labels, metrics):
-    # This function creates a dataframe with descriptive statistics, including the count, the number of accounts, and
-    # the median, maximum, and percent of tweets with at least one diffusion metric (user-provided: retweet, quote
-    # tweet, or reply; user can provide multiple metrics). The function returns the dataframe, at which point the user
-    # can choose to show or save the output outside of the function.
+    """
+    Calculate and return dataframe of descriptive count and diffusion statistics (median, max, total, percent with) for
+    user-defined groups of tweets
 
-    # Required inputs: a tweet dataframe, a column or list of columns that contains the values of interest, a value or
-    # list of values to search for within the column(s), labels for the unique values, and a list of diffusion metrics
-    # to calculate mean/max/percent with for. Metrics must be formatted as they are formatted in the column names: 'rt'
-    # for retweet, 'qt' for quote tweet, 'reply' for reply.
+    Parameters:
+        df: A Pandas dataframe of Twitter data
+        columns: A list of column(s) in the Twitter dataframe where grouping data is stored
+        values: A list of value(s) that the grouping data can take
+        labels: A list of label(s) for the groupings
+        metrics: A list of diffusion metric(s) to compute descriptive statistics for
 
-    # To calculate descriptive statistics for variables for which all the values are stored in one column (e.g. image
-    # type --> 'image-type' or user source --> 'user-scope_aff'), only input the one column (as a string in a list,
-    # not just a string).
+    Notes:
+        To calculate descriptive statistics for variables for which all the values are stored in one column
+        (e.g. image type --> 'image-type' or user source --> 'user-scope_aff'), only input the one column (as a string
+        in a list, not just a string).
 
-    # Example: to obtain descriptive retweet and reply statistics for image-type, input:
-    # import twitter_toolkit as ttk
-    # ttk.descr_stats(*df_name*, columns=['image-type'], values=*list of image type*, labels=*list of image types*,
-    #                       metrics=['rt', 'reply'])
+        Example: to obtain descriptive retweet and reply statistics for image-type, input:
+        import twitter_toolkit as ttk
+        ttk.descr_stats(*df_name*, columns=['image-type'], values=*list of image type*, labels=*list of image types*,
+        metrics=['rt', 'reply'])
 
-    # For variables where values are stored in multiple columns (e.g. image language is stored in 'image-lang_spanish'
-    # and 'image-lang_english', include both columns of interest. For values, put [1], since you are searching for
-    # the instances where the value in the column is equal to one. Include descriptive labels.
+        For variables where values are stored in multiple columns (e.g. image language is stored in
+        'image-lang_spanish' and 'image-lang_english', include both columns of interest. For values, put [1], since you
+        are searching for the instances where the value in the column is equal to one. Include descriptive labels.
 
-    # Example: to obtain descriptive retweet statistics for image language, input:
-    # import twitter_toolkit as ttk
-    # ttk.descr_stats(*df_name*, columns=['image-lang_spanish', 'image-lang_english'], values=[1],
-    #                       labels=['Spanish, 'English'], metrics=['rt'])
+        Example: to obtain descriptive retweet statistics for image language, input:
+        import twitter_toolkit as ttk
+        ttk.descr_stats(*df_name*, columns=['image-lang_spanish', 'image-lang_english'], values=[1],
+        labels=['Spanish, 'English'], metrics=['rt'])
+    """
 
     # Calculate tweet and account count for each user-provided combination of column and value.
     count = []
@@ -1033,20 +937,20 @@ def descr_stats(df, columns, values, labels, metrics):
     return df_out
 
 
-# Other tables
 def mannwhitneyu_test(df, by, how, metric):
-    # This function calculates two-sided Mann-Whitney U p-value comparisons for image types or user sources. The
-    # function returns a dataframe of p-values, either as a matrix or as a list, depending on user input.
+    """
+    Calculate and return a dataframe of p-values for Mann-Whitney U statistical comparisons for user-defined tweet
+    groupings
 
-    # Required inputs: a tweet dataframe (df), a column name (by) to gather unique values from
-    # (for images --> 'image-type', for user source --> 'user-scope_aff'), whether the test should be performed as a
-    # pooled comparison (median of one group to median of everything else) or a matrix (compare median of one group to
-    # the median of each other group individually) (how), and the diffusion metric that serves as the basis of
-    # comparison (metric).
-
-    # Note: the metric is not constrained to just final tweet count - any count or rate statistic can be compared. As
-    # such, user-input must include the full column name (e.g. 'diffusion-rt_count', 'diffusion-reply_count_360m',
-    # 'diffusion-qt_rate_5m').
+    Parameters:
+        df: A Pandas dataframe of Twitter data
+        by: A string column name in the Twitter dataframe where groupings are stored
+        how: Whether to perform the test as a pooled comparison (median of one group to median of everything else) or
+                 as a matrix comparison (median of one group to median of each other group individually) (string; must
+                 be 'pooled' or 'matrix')
+        metric: The diffusion metric to make comparisons on (string; must correspond to diffusion column in Twitter
+                    dataframe)
+    """
 
     # Obtain the unique values in the user-provided column and append as 'items' to a dataframe.
     pval_df = pd.DataFrame()
@@ -1064,13 +968,21 @@ def mannwhitneyu_test(df, by, how, metric):
             for item2 in items:
                 x = df.loc[df[by] == item1]
                 y = df.loc[df[by] == item2]
-                # print(source1 + ' vs ' + source2)
                 statistic, pvalue = stats.mannwhitneyu(x[metric], y[metric], alternative='two-sided')
                 items_pval.append(pvalue)
             pval_df[item1] = items_pval
 
             # Format to only display four decimal points.
             pd.options.display.float_format = '{:.4f}'.format
+
+        # Append median values
+        pval_df['median_in'] = median
+
+        # Format dataframe for display
+        pval_df.sort_values('median_in', ascending=False, inplace=True)
+        pval_df.set_index('items', inplace=True)
+        sort_order = ['median_in'] + pval_df.index.tolist()
+        pval_df = pval_df[sort_order]
 
     # If the user selects a pooled comparison, select all the values in one group and compare the median to the median
     # of values not in that group. Append the p-value result of the two-sided Mann-Whitney U test to the dataframe, in
@@ -1099,24 +1011,66 @@ def mannwhitneyu_test(df, by, how, metric):
 
         # Format to only display four decimal points for p-value column.
         pval_df['pooled_pval'] = pval_df['pooled_pval'].map('{:.4f}'.format)
+        pval_df.sort_values('median_in', ascending=False, inplace=True)
 
     # If the user does not provide a proper response to "how", return an error.
     else:
         return '"How" not valid. Please choose matrix or pooled. '
 
-    # Append median values
-    pval_df['median'] = median
-
     # Format the dataframe for display.
-    pval_df.set_index('items', inplace=True)
-    pval_df.sort_values('median', ascending=False, inplace=True)
-    sort_order = ['median'] + pval_df.index.tolist()
-    pval_df = pval_df[sort_order]
+
 
     # Return the p-value dataframe to the user.
     return pval_df
 
 
+def cat_midpoint(df, cat_col, weight_col, show=False):
+    """
+    Calculates the midpoint and diffusion-weighted midpoint (time) for each unique value in a tweet categorization
+    scheme. Returns a sorted (by diffusion-weighted midpoint) list of unique categorizations.
+
+    Parameters:
+        df: A tweet dataframe with coded categorizations and diffusion data (Pandas dataframe)
+        cat_col: Name of column where categorized data is stored (string)
+        weight_col: Name of column where data that midpoint should be weighted by is stored (string)
+        show: Whether or not to display the midpoints and weighted midpoint for each unique value, sorted from earliest
+                  weighted midpoint to latest (Boolean, default False)
+    """
+
+    # Initialize mean and weighted mean variables
+    mean = []
+    mean_weighted = []
+
+    # For each unique value in the categorization column...
+    for item in df[cat_col].drop_duplicates().tolist():
+
+        # Select only tweets coded as the unique value
+        item_df = df.loc[df[cat_col] == item]
+
+        # Calculate the mean/midpoint of the selected tweets
+        item_df['tweet-created_at'] = item_df['tweet-created_at'].astype(np.int64)
+        item_mean = pd.to_datetime(item_df['tweet-created_at'].mean())
+        mean.append(item_mean)
+
+        # Calculate the diffusion-weighted mean/midpoint of the selected tweets
+        item_df['weighted'] = item_df['tweet-created_at'] * (item_df[weight_col] / item_df[weight_col].sum())
+        item_weighted = pd.to_datetime(item_df['weighted'].sum())
+        mean_weighted.append(item_weighted)
+
+    # Combine unique values, midpoint, and weighted midpoint in to a dataframe and sort by diffusion-weighted mean
+    mp_df = pd.DataFrame({cat_col: df[cat_col].drop_duplicates().tolist(), 'mean': mean,
+                          'mean_weighted': mean_weighted})
+    mp_df['diff'] = mp_df['mean_weighted'] - mp_df['mean']
+    mp_df.sort_values('mean_weighted', inplace=True)
+
+    # Show, if desired
+    if show is True:
+        print(mp_df)
+
+    return mp_df[cat_col].tolist()
+
+
+# Other tables
 def timeseries_table(df, freq, show=True, save=False):
     # This function returns a dataframe with the tweet count and retweet sum for each image type (in addition to a sum
     # of watch/warning and non-watch/warning images) for each time-bin of a user-provided frequency (in minutes). User
@@ -1322,58 +1276,10 @@ def rt_timeseries_table(df, gb, metric, show=True, save=False):
         df_gb_per.to_csv(metric + '_timeseries_per.csv', float_format='%.0f')
 
 
-def cat_midpoint(df, cat_col, weight_col, show=False):
-    """
-    Calculates the midpoint and diffusion-weighted midpoint (time) for each unique value in a tweet categorization
-        scheme. Returns a sorted (by diffusion-weighted midpoint) list of unique categorizations.
-
-    Parameters:
-        df: A tweet dataframe with coded categorizations and diffusion data (Pandas dataframe)
-        cat_col: Name of column where categorized data is stored (string)
-        weight_col: Name of column where data that midpoint should be weighted by is stored (string)
-        show: Whether or not to display the midpoints and weighted midpoint for each unique value, sorted from earliest
-                  weighted midpoint to latest (Boolean, default False)
-    """
-
-    # Initialize mean and weighted mean variables
-    mean = []
-    mean_weighted = []
-
-    # For each unique value in the categorization column...
-    for item in df[cat_col].drop_duplicates().tolist():
-
-        # Select only tweets coded as the unique value
-        item_df = df.loc[df[cat_col] == item]
-
-        # Calculate the mean/midpoint of the selected tweets
-        item_df['tweet-created_at'] = item_df['tweet-created_at'].astype(np.int64)
-        item_mean = pd.to_datetime(item_df['tweet-created_at'].mean())
-        mean.append(item_mean)
-
-        # Calculate the diffusion-weighted mean/midpoint of the selected tweets
-        item_df['weighted'] = item_df['tweet-created_at'] * (item_df[weight_col] / item_df[weight_col].sum())
-        item_weighted = pd.to_datetime(item_df['weighted'].sum())
-        mean_weighted.append(item_weighted)
-
-    # Combine unique values, midpoint, and weighted midpoint in to a dataframe and sort by diffusion-weighted mean
-    mp_df = pd.DataFrame({cat_col: df[cat_col].drop_duplicates().tolist(), 'mean': mean,
-                          'mean_weighted': mean_weighted})
-    mp_df['diff'] = mp_df['mean_weighted'] - mp_df['mean']
-    mp_df.sort_values('mean_weighted', inplace=True)
-
-    # Show, if desired
-    if show is True:
-        print(mp_df)
-
-    return mp_df[cat_col].tolist()
-
-
 # </editor-fold>
 
+
 # <editor-fold desc="Figures">
-
-
-# Figure 1: sankey diagram (re-code)
 def sankey(df, labels=True, show=True):
     """
     Produces a Sankey plot visualizing the filtering of the tweet data
@@ -1436,21 +1342,82 @@ def sankey(df, labels=True, show=True):
         fig.show()
 
 
-# NEW Figure 3
-def timeseries_ww_wwexp_nonww(df, images, freq, dates, median, show=True, save=False):
-    # This function displays four subplots. The first subplot shows the number of tweets with watch/warning,
-    # watch/warning (experimental), and non-watch/warning images over time as a stacked bar chart, where the width of
-    # the bar corresponds to a user-provided time frequency (in minutes). The subsequent subplots display summary
-    # diffusion information for each of the image groups. In each subplot, the total number of RTs and replies in each
-    # time bin are plotted as black and red solid lines (respectively) and the median RT value is plotted as a circle,
-    # where the color of the circle matches the color of the bars in the first subplot. User can choose whether to show
-    # and/or save the figure (default is to show and not save).
+def scatter_size(df, show=True):
+    """
+    Plots a retweet-reply scatter plot where the area of the points are proportional to the number of occurences of
+    that retweet/reply combination, and where the axes use the "symlog" scale in order to show all of the data in a
+    compact manor
 
-    # Notes: Function assumes created-at column is not index of dataframe. Frequency must be provided in minutes as an
-    # integer. Dates should be input as a list of timezone-aware datetime objects which correspond to the start-time of
-    # the plot, the end-time of the plot, and any significant dates inbetween that should be highlighted. If user
-    # chooses to save the plot, the figure will be saved to a "Timing" folder. If this folder does not exist, an error
-    # will be raised.
+    Parameters:
+        df: A tweet dataframe with retweet and reply data (Pandas dataframe)
+        show: Whether to display the figure (Boolean, default True)
+    """
+
+    # Count the occurence of each unique retweet/reply count combination
+    gb = df.groupby(['diffusion-rt_count', 'diffusion-reply_count'])['tweet-id_trunc']. \
+        size().reset_index().rename(columns={'tweet-id_trunc': 'count'})
+
+    # Create a scatter plot where the size of the scatter is proportional to the number of occurences of each point
+    fig, ax = plt.subplots(figsize=(7.5, 7.5))
+    c = '#69d'
+    ax.scatter(gb['diffusion-rt_count'], gb['diffusion-reply_count'], c='#69d', edgecolor='black', linewidth=0.25,
+               alpha=0.5, s=gb['count'] * 25)
+
+    # Set the x and y scales to "symlog" in order to display zero values while maintaining the compactness of the log
+    # display
+    ax.set_yscale('symlog')
+    ax.set_xscale('symlog')
+
+    # Set axis limits and labels
+    ax.set_ylim(bottom=-1)
+    ax.set_xlim(left=-1)
+    ax.set_xlabel('Retweets', fontsize=14, labelpad=10)
+    ax.set_ylabel('Replies', fontsize=14, labelpad=10)
+    ax.tick_params(axis='both', which='major', labelsize=14)
+
+    # Display a grid
+    ax.grid(alpha=0.5)
+
+    # Manually set legend for size values.
+    size = [1, 10, 100]
+    legend_elements2 = [
+        Line2D([0], [0], marker='o', color='w', markeredgecolor='black', markerfacecolor='w', label=str(size[0]),
+               markersize=math.sqrt(size[0] * 25)),
+        Line2D([0], [0], marker='o', color='w', markeredgecolor='black', markerfacecolor='w', label=str(size[1]),
+               markersize=math.sqrt(size[1] * 25)),
+        Line2D([0], [0], marker='o', color='w', markeredgecolor='black', markerfacecolor='w', label=str(size[2]),
+               markersize=math.sqrt(size[2] * 25))]
+    ax.legend(handles=legend_elements2, loc='upper left', bbox_to_anchor=[0.15, -0.12], ncol=4, borderpad=1.5,
+              fontsize=14)
+    fig.subplots_adjust(bottom=0.2, left=0.15, right=0.95)
+
+    # Show, if desired
+    if show is True:
+        plt.show()
+    else:
+        plt.close()
+
+    # Close figure
+    plt.close()
+
+
+def timeseries_ww_wwexp_nonww(df, freq, dates, median, show=True, save=False):
+    """
+    Plots tweet counts and total/median RTs/replies for experimental watch/warning, non-experimental watch/warning, and
+    non-watch/warning tweets over time
+
+    Parameters:
+        df: A Pandas dataframe of Twitter data
+        freq: Length of time bins to split data into in minutes (integer)
+        dates: A list of timezone-aware datetime objects which correspond to the start time of the plot, the end time of
+                   the plot, and any significant dates inbetween that should be highlighted
+        median: Whether to plot median diffusion in addition to total diffusion (Boolean)
+        show: Whether to display the plot (Boolean; default True)
+        save: Whether to save the plot (Boolean; default False)
+
+    Notes:
+        Created-at column must not be index of Twitter dataframe.
+    """
 
     # Set the dataframe index to the created at column.
     df = df.set_index('tweet-created_at')
@@ -1461,6 +1428,7 @@ def timeseries_ww_wwexp_nonww(df, images, freq, dates, median, show=True, save=F
 
     # Slice the tweet dataframe into three seperate dataframes which include only watch/warning (non-exp),
     # watch/warning (exp), and non-watch/warning images respectively.
+    images = df['image-type'].drop_duplicates().tolist()
     images_nonww = [image for image in images if (image != 'Watch/Warning') & (image != 'Watch/Warning (Exp)')]
     df_nonww = tweet_filter(df, image_range=images_nonww)
     df_ww = tweet_filter(df, image_range=['Watch/Warning'])
@@ -1484,12 +1452,6 @@ def timeseries_ww_wwexp_nonww(df, images, freq, dates, median, show=True, save=F
     sum_reply_ww = df_ww.groupby(pd.Grouper(freq=freq_str)).sum()['diffusion-reply_count']
     sum_reply_ww_exp = df_ww_exp.groupby(pd.Grouper(freq=freq_str)).sum()['diffusion-reply_count']
 
-    if median is True:
-        # Calculate the median retweets for each sliced dataframe for each time bin.
-        med_rt_nonww = df_nonww.groupby(pd.Grouper(freq=freq_str)).median()['diffusion-rt_count']
-        med_rt_ww = df_ww.groupby(pd.Grouper(freq=freq_str)).median()['diffusion-rt_count']
-        med_rt_ww_exp = df_ww_exp.groupby(pd.Grouper(freq=freq_str)).median()['diffusion-rt_count']
-
     # Create a figure and axes, then twin the axes so there are two y-axes.
     fig, (ax0, ax1, ax2, ax3) = plt.subplots(4, 1, figsize=(11, 11))
     ax4 = ax1.twinx()
@@ -1497,14 +1459,8 @@ def timeseries_ww_wwexp_nonww(df, images, freq, dates, median, show=True, save=F
     ax6 = ax3.twinx()
     axes = [ax0, ax1, ax2, ax3]
 
-    if median is True:
-        axes_twin = [ax4, ax5, ax6]
-
     # For each y-axis, share the bounds so that each subplot plots over the same y-values.
     ax1.get_shared_y_axes().join(ax1, ax2, ax3)
-
-    if median is True:
-        ax6.get_shared_y_axes().join(ax4, ax5, ax6)
 
     # Create a figure and set plotting variables.
     w = freq / 1800
@@ -1540,13 +1496,6 @@ def timeseries_ww_wwexp_nonww(df, images, freq, dates, median, show=True, save=F
     ax2.plot(sum_reply_ww.index + td, sum_reply_ww, color='maroon', linewidth=lw, label='Total Reply')
     ax3.plot(sum_reply_nonww.index + td, sum_reply_nonww, color='maroon', linewidth=lw, label='Total Reply')
 
-    if median is True:
-        # Scatter plots for median retweet information.
-        ax4.scatter(med_rt_ww_exp.index + td, med_rt_ww_exp, marker='o', facecolor='white', color='green',
-                label='Median RT')
-        ax5.scatter(med_rt_ww.index + td, med_rt_ww, marker='o', facecolor='white', color='orange', label='Median RT')
-        ax6.scatter(med_rt_nonww.index + td, med_rt_nonww, marker='o', facecolor='white', color='blue', label='Median RT')
-
     # Format major axes and labels.
     for ax in axes:
         ax.set_xlim(start, end)
@@ -1559,6 +1508,24 @@ def timeseries_ww_wwexp_nonww(df, images, freq, dates, median, show=True, save=F
     ax0.set_ylabel('Tweet Count', fontsize=fs, labelpad=lp)
 
     if median is True:
+        # Calculate the median retweets for each sliced dataframe for each time bin.
+        med_rt_nonww = df_nonww.groupby(pd.Grouper(freq=freq_str)).median()['diffusion-rt_count']
+        med_rt_ww = df_ww.groupby(pd.Grouper(freq=freq_str)).median()['diffusion-rt_count']
+        med_rt_ww_exp = df_ww_exp.groupby(pd.Grouper(freq=freq_str)).median()['diffusion-rt_count']
+
+        # Twin the axes to show median diffusion on secondary y-axis.
+        axes_twin = [ax4, ax5, ax6]
+
+        # Share secondary y-axis bounds so that each subplot plots over the same y-values.
+        ax6.get_shared_y_axes().join(ax4, ax5, ax6)
+
+        # Scatter plots for median retweet information.
+        ax4.scatter(med_rt_ww_exp.index + td, med_rt_ww_exp, marker='o', facecolor='white', color='green',
+                    label='Median RT')
+        ax5.scatter(med_rt_ww.index + td, med_rt_ww, marker='o', facecolor='white', color='orange', label='Median RT')
+        ax6.scatter(med_rt_nonww.index + td, med_rt_nonww, marker='o', facecolor='white', color='blue',
+                    label='Median RT')
+
         # Format secondary axes and labels.
         for ax in axes_twin:
             ax.tick_params(axis='y', labelsize=ls)
@@ -1582,46 +1549,43 @@ def timeseries_ww_wwexp_nonww(df, images, freq, dates, median, show=True, save=F
 
     # Save figure, if desired.
     if save is True:
-        fig.savefig('timeseries_6h.png', dpi=300)
+        fig.savefig('timeseries_' + freq_title + '.png', dpi=300)
 
 
-# Figure 4
-def rate_plot(df_all, gb, metric, title, show=True, save=False, **kwargs):
-    # This function plots the cumulative median diffusion at a set of pre-calculated times after tweet creation (e.g.
-    # 5 mins, 30 mins, 2h, 6h). The function plots one timeseries for each unique element in the user-provided gb
-    # column name (e.g. 'image-type' or 'user-scope_aff'). If the user chooses 'image-type' as the grouby column, they
-    # can optionally provide a 'df_nokey' tweet dataframe (a tweet dataframe with key messages graphics filtered out) as
-    # a keyword argument. If provided, the function will create two subplots - one with all image types, and one with
-    # key message removed. The metric input controls which diffusion metric is plotted (e.g. 'rt', 'reply', 'qt'). The
-    # user can choose whether to show and/or save the figure (default is to show and not save).
+def rate_plot(df, gb, metric, title, show=True):
+    """
+    Plots the cumulative median diffusion for groupings of tweet data at a set of pre-calculated times after tweet
+    creation (e.g. 5m, 10m, 2h, 6h)
 
-    # Notes: Function assumes that input dataframe does not already have 'tweet-created_at' as the index. Frequency must
-    # be provided as an integer, in minutes (e.g. for 3h, input 180). Metric must match the form used in the column
-    # name (retweet: 'rt', reply: 'reply', quote tweet: 'qt'). If user chooses to save output, note that output
-    # is saved to a "Rates" folder. If this folder does not exist, an error will be raised.
+    Parameters:
+        df: A Pandas dataframe of Twitter data
+        gb: A column in the Twitter dataframe with unique values to group tweets by
+        metric: The diffusion metric (e.g. 'rt', 'reply') to plot over time
+        title: Descriptive title for groupings to be part of the figure title (string; lowercase)
+        show: Whether to display the figure (Boolean; default True)
 
+    Notes:
+        Created-at must not be index of Twitter dataframe
+        Metric must match the form used in the column name (retweet: 'rt', reply: 'reply', quote tweet: 'qt')
+    """
     # Gather all the diffusion count columns for the user-provided metric.
     count_cols = []
-    for col in df_all.columns:
+    for col in df.columns:
         if ((('diffusion-' + metric) in col) is True) & (('count' in col) is True):
             count_cols.append(col)
 
-    # Obtain 'nokey' dataframe, if provided.
-    df_nokey = kwargs.get('df_nokey', None)
-
-    # Calculate the median value for each retweet diffusion column for each image or source grouping for the all image
-    # dataframe.
-    df1_gb = df_all.groupby([gb])[count_cols].median()
-    cols = df1_gb.columns.tolist()
+    # Calculate the median value for each retweet diffusion column for each tweet grouping in the Twitter dataframe
+    df_gb = df.groupby([gb])[count_cols].median()
+    cols = df_gb.columns.tolist()
     cols.append(cols.pop(cols.index('diffusion-rt_count')))
-    df1_gb = df1_gb[cols]
+    df_gb = df_gb[cols]
 
     # Sort the groupby by final retweets and transpose so that each column represents one source/image group
-    df1_gb.sort_values('diffusion-' + metric + '_count_360m', ascending=False, inplace=True)
-    df1_gb = df1_gb.T
+    df_gb.sort_values('diffusion-' + metric + '_count_360m', ascending=False, inplace=True)
+    df_gb = df_gb.T
 
     # Reformat index so that it displays the number of minutes the diffusion value is calculated over
-    df1_gb.index = [5, 10, 15, 30, 60, 120, 240, 360, 400]
+    df_gb.index = [5, 10, 15, 30, 60, 120, 240, 360, 400]
 
     # Define plotting variables
     ts = 14
@@ -1641,6 +1605,7 @@ def rate_plot(df_all, gb, metric, title, show=True, save=False, **kwargs):
     color_hex.append(color_hex[0])
     color_hex.append(color_hex[1])
 
+    # Define plotting variables for specific grouped columns
     if gb == 'image-ww_map':
         colors = ['blue', 'orange', 'green']
         leg_cols = 3
@@ -1672,85 +1637,10 @@ def rate_plot(df_all, gb, metric, title, show=True, save=False, **kwargs):
         adjust = 0.2
         bboxy = -0.25
 
-    #if gb == 'image-type':
-
-        # If user includes a 'nokey' dataframe (the same dataframe but with key messages graphics removed), plot a
-        # second subplot for the no key messages data. Make the image twice as wide to compensate.
-    #    if df_nokey is not None:
-    #        fig, axes = plt.subplots(1, 2, figsize=(14, 7))
-
-            # Calculate the median value for each retweet diffusion column for each image for the nokey dataframe.
-    #        df2_gb = df_nokey.groupby([gb])[count_cols].median()
-
-            # Sort the groupby by the 6h count column (the latest time value, other than the final one), transpose so
-            # that each column represents one image group, remove the final row, and reformat index so that it displays
-            # the number of minutes the diffusion value is calculated over (to make plotting more intuitive).
-    #        df2_gb.sort_values('diffusion-' + metric + '_count_360m', ascending=False, inplace=True)
-    #        df2_gb = df2_gb.T
-    #        df2_gb = df2_gb.drop('diffusion-' + metric + '_count', axis=0)
-    #        df2_gb.index = [5, 10, 15, 30, 60, 120, 240, 360]
-
-            # Plot the groupby for all images, using all the color values (the original Tab 10, plus the looped 2).
-            # Include title, xlabel, ylabel, and legend.
-    #        df1_gb.plot(ax=axes[0], color=color_hex)
-    #        axes[0].set_title('Median retweet diffusion over time by image')
-    #        axes[0].set_xlabel('Minutes since post', labelpad=10)
-    #        axes[0].set_ylabel('Cumulative retweets', labelpad=20)
-
-            # Plot the groupby for the nokey dataframe. Conserve the color scheme from the first plot by only using the
-            # colors for the n plot items the two plots share. Include title and xlabel (but no ylabel).
-    #        df2_gb.plot(ax=axes[1], color=color_hex[(len(df1_gb.columns) - len(df2_gb.columns)):])
-    #        axes[1].set_title('Median retweet diffusion over time by image (no key messages)')
-    #        axes[1].set_xlabel('Minutes since post', labelpad=10)
-
-            # Create one legend for both subplots, anchored below the subplots and roughly centered. Adjust subplots to
-            # make room for legend.
-    #        axes[0].legend(loc='upper left', bbox_to_anchor=[0.5, -0.125], ncol=3, fontsize=8)
-    #        axes[1].get_legend().remove()
-    #        fig.subplots_adjust(bottom=0.2)  # , left=0.25, right=0.9)
-
-        # If no nokey df is provided, only plot with one subplot.
-    #    else:
-    #        fig, ax = plt.subplots(figsize=(7, 7))
-
-            # Plot the groupby for all images, using all the color values (the original Tab 10, plus the looped 2).
-            # Include title and labels
-    #        df1_gb.plot(ax=ax, color=color_hex)
-            #ax.set_title('Median retweet diffusion over time by ' + title, fontsize=ts)
-    #        ax.set_xlabel('Minutes since post', fontsize=ts, labelpad=10)
-    #        ax.set_ylabel('Cumulative retweets', fontsize=ts, labelpad=20)
-
-            # Modify final xtick label
-    #        labels = ['{:,.0f}'.format(x) for x in ax.get_xticks().tolist()]
-    #        print(labels)
-    #        labels[-2] = 'Final'
-    #        print(labels)
-    #        ax.set_xticklabels(labels)
-    #        ax.tick_params(labelsize=ls)
-
-            # Add legend
-    #        ax.legend(loc='upper left', ncol=2, fontsize=ls)
-
-            # Add grid
-    #        ax.grid(alpha=0.2)
-
-        # Show figure, if desired.
-    #    if show is True:
-    #        plt.show()
-
-        # Save figure, if desired.
-    #    if save is True:
-    #        fig.savefig('Rates\\rt_rate_image.png', dpi=300)
-
-        # Close figure
-    #    plt.close()
-
-    # If creating a source grouped plot, create only one subplot for all sources (using the all images dataframe).
-    # Include title, xlabel, ylabel, and legend below the plot, adjusting subplot to make room. Save figure.
-    #else:
+    # Plot values over time, title, and label axes
     fig, ax = plt.subplots(figsize=(7, 7))
-    df1_gb.plot(ax=ax, color=colors, alpha=a, linewidth=lw)
-    #ax.set_title('Median retweet diffusion over time by ' + title, fontsize=ts)
+    df_gb.plot(ax=ax, color=colors, alpha=a, linewidth=lw)
+    ax.set_title('Median retweet diffusion over time by ' + title, fontsize=ts)
     ax.set_xlabel('Minutes since post', fontsize=ts, labelpad=10)
     ax.set_ylabel('Cumulative retweets', fontsize=ts, labelpad=15)
 
@@ -1762,7 +1652,7 @@ def rate_plot(df_all, gb, metric, title, show=True, save=False, **kwargs):
 
     # Add legend
     ax.legend(loc='lower center', bbox_to_anchor=[0.5, bboxy], ncol=leg_cols, fontsize=ls)
-    fig.subplots_adjust(bottom=adjust)  # , left=0.2, right=0.9)
+    fig.subplots_adjust(bottom=adjust)
 
     # Add grid
     ax.grid(alpha=0.2)
@@ -1773,30 +1663,31 @@ def rate_plot(df_all, gb, metric, title, show=True, save=False, **kwargs):
     else:
         plt.close()
 
-    # Save figure, if desired.
-    #if save is True:
-    #        fig.savefig('Rates\\rt_rate_source.png', dpi=300)
 
-
-# Figure 5/7 - not created yet
-
-
-# Figure 6/8
 def timeline(df, value_cols, values, labels, size_col, color_col, dates, zeros=True, show=True, save=False):
-    # This function creates a figure from a user-provided tweet dataframe that displays each tweet as a circle, where
-    # the size of the circle represents the value of the user-provided size column (e.g. diffusion-rt_count) and the
-    # color represents the value of a binary user-provided color column (e.g. image-branding_off). Circles are plotted
-    # in rows, where each row represents one value of a user-provided value column (e.g. image-type). User provides
-    # the values they'd like to include, in the order they'd like to include them, using the values input. User can
-    # choose to show zero values on the plot or to suppress them (default is to show). User can choose whether to show
-    # and/or save the figure (default is to show and not save).
+    """
+    Plots each tweet as a circle on a timeline, segregated for a set of tweet groupings, colored by a relevant variable,
+    and sized by diffusion
 
-    # Notes: the color-col MUST be a binary column. Note that the function plots from the bottom up. Therefore, the
-    # values should be input in reverse order of how the user would like them to read top-down. Function assumes
-    # created-at column is not index of dataframe. Dates should be input as a list of timezone-aware datetime objects
-    # which correspond to the start-time of the plot and the end-time of the plot. Other dates can be included, but they
-    # will not be highlighted, as in other plots. If user chooses to save the plot, the figure will be saved to a
-    # "Timing" folder. If this folder does not exist, an error will be raised.
+    Parameters:
+        df: A Pandas dataframe of Twitter data
+        value_cols: A list of column(s) in the Twitter dataframe where values for creating groupings are stored
+        values: A list of values to look for in the value column(s)
+        labels: A list of descriptive labels for each grouping
+        size_col: A string name of a column in the Twitter dataframe where diffusion data is stored
+        color_col: A string name of a column in the Twitter dataframe to be used to determine the color of the tweet in
+                       the plot
+        dates: A list of timezone-aware datetime objects that include the start of the plot and the end of the plot
+        zeros: Whether to show tweets with zero retweets on the plot (Boolean; default True)
+        show: Whether to display the image (Boolean; default True)
+        save: Whether to save the image (Boolean; default False)
+
+    Notes:
+         Color_col must be a binary column.
+         The function plots from the bottom up. Therefore, the values should be input in reverse order of how the user
+         would like them to read top-down.
+         Dates can include other dates beside start and end of the plot, but they will not be plotted.
+    """
 
     # Create a figure and set plotting variables.
     fig, ax = plt.subplots(figsize=(11, 8.5))
@@ -1943,14 +1834,16 @@ def timeline(df, value_cols, values, labels, size_col, color_col, dates, zeros=T
 
     # Save figure, if desired.
     if save is True:
-        fig.savefig('Timing\\timeline_' + title + '_' + size_title + '.png', dpi=300)
+        fig.savefig('timeline_' + title + '_' + size_title + '.png', dpi=300)
 
     # Show figure, if desired.
     if show is True:
         plt.show()
+    else:
+        plt.close()
 
 
-# Figure 9
+# Other figures
 def timeseries_nonww(df, freq, images, dates, show=True, save=False):
     # This function displays the tweet count and diffusion patterns for a set of user-provided image types over time.
     # The first subplot shows the count of each image type over time as a stacked bar chart, where the width of the bar
@@ -2126,7 +2019,6 @@ def timeseries_nonww(df, freq, images, dates, show=True, save=False):
         fig.savefig('Timing\\timeseries_nonww_' + freq_title + '.png', dpi=300)
 
 
-# Other figures
 def timeseries_all(df, metrics, stat, dates, date_labels, freq, suppress_val=5, outlier=True, show=True, save=False):
     # This function produces a plot of various metrics plotted over time. The function takes a tweet dataframe (which
     # includes diffusion metrics summarized for each tweet), a number of metrics to summarize (such as RT, reply,
@@ -2710,65 +2602,6 @@ def basic_scatter(df_calc, df_final, show=True, save=False):
         plt.show()
 
 
-def scatter_size(df, show=True):
-    """
-    Plots a retweet-reply scatter plot where the area of the points are proportional to the number of occurences of
-        that retweet/reply combination, and where the axes use the "symlog" scale in order to show all of the data in
-        a compact manor
-
-    Parameters:
-        df: A tweet dataframe with retweet and reply data (Pandas dataframe)
-        show: Whether to display the figure (Boolean, default True)
-    """
-
-    # Count the occurence of each unique retweet/reply count combination
-    gb = df.groupby(['diffusion-rt_count', 'diffusion-reply_count'])['tweet-id_trunc']. \
-        size().reset_index().rename(columns={'tweet-id_trunc': 'count'})
-
-    # Create a scatter plot where the size of the scatter is proportional to the number of occurences of each point
-    fig, ax = plt.subplots(figsize=(7.5, 7.5))
-    c = '#69d'
-    ax.scatter(gb['diffusion-rt_count'], gb['diffusion-reply_count'], c='#69d', edgecolor='black', linewidth=0.25,
-               alpha=0.5, s=gb['count'] * 25)
-
-    # Set the x and y scales to "symlog" in order to display zero values while maintaining the compactness of the log
-    # display
-    ax.set_yscale('symlog')
-    ax.set_xscale('symlog')
-
-    # Set axis limits and labels
-    ax.set_ylim(bottom=-1)
-    ax.set_xlim(left=-1)
-    ax.set_xlabel('Retweets', fontsize=14, labelpad=10)
-    ax.set_ylabel('Replies', fontsize=14, labelpad=10)
-    ax.tick_params(axis='both', which='major', labelsize=14)
-
-    # Display a grid
-    ax.grid(alpha=0.5)
-
-    # Manually set legend for size values.
-    size = [1, 10, 100]
-    legend_elements2 = [
-        Line2D([0], [0], marker='o', color='w', markeredgecolor='black', markerfacecolor='w', label=str(size[0]),
-               markersize=math.sqrt(size[0] * 25)),
-        Line2D([0], [0], marker='o', color='w', markeredgecolor='black', markerfacecolor='w', label=str(size[1]),
-               markersize=math.sqrt(size[1] * 25)),
-        Line2D([0], [0], marker='o', color='w', markeredgecolor='black', markerfacecolor='w', label=str(size[2]),
-               markersize=math.sqrt(size[2] * 25))]
-    ax.legend(handles=legend_elements2, loc='upper left', bbox_to_anchor=[0.15, -0.12], ncol=4, borderpad=1.5,
-              fontsize=14)
-    fig.subplots_adjust(bottom=0.2, left=0.15, right=0.95)
-
-    # Show, if desired
-    if show is True:
-        plt.show()
-    else:
-        plt.close()
-
-    # Close figure
-    plt.close()
-
-
 def scatter_kde(df):
     """
     Plots a retweet-reply scatter plot where the color of the points are based on a Gaussian kernel density estimate,
@@ -3047,6 +2880,16 @@ def rt_quint_comp(df, stat, show=True, save=False):
 
 # <editor-fold desc="Other">
 def url_display(df):
+    """
+    Display all tweets in a Twitter dataframe in a Chrome incognito browser
+
+    Parameters:
+        df: A Pandas dataframe of Twitter data
+
+    Notes:
+        The Twitter dataframe must have a column named 'tweet-url' which corresponds to the tweet URL.
+    """
+
     # Select an image dataset and display all URLs in browser.
     url = df['tweet-url']
     locs = list(range(0, len(url)))
