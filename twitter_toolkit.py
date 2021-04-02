@@ -1057,8 +1057,10 @@ def mannwhitneyu_test(df, by, how, metric):
     # of values in every other group, individually. Append the p-value result of the two-sided Mann-Whitney U test to
     # the dataframe, one row and one column for each individual group.
     if how == 'matrix':
+        median = []
         for item1 in items:
             items_pval = []
+            median.append(df.loc[df[by] == item1][metric].median())
             for item2 in items:
                 x = df.loc[df[by] == item1]
                 y = df.loc[df[by] == item2]
@@ -1102,8 +1104,14 @@ def mannwhitneyu_test(df, by, how, metric):
     else:
         return '"How" not valid. Please choose matrix or pooled. '
 
+    # Append median values
+    pval_df['median'] = median
+
     # Format the dataframe for display.
     pval_df.set_index('items', inplace=True)
+    pval_df.sort_values('median', ascending=False, inplace=True)
+    sort_order = ['median'] + pval_df.index.tolist()
+    pval_df = pval_df[sort_order]
 
     # Return the p-value dataframe to the user.
     return pval_df
@@ -1366,12 +1374,14 @@ def cat_midpoint(df, cat_col, weight_col, show=False):
 
 
 # Figure 1: sankey diagram (re-code)
-def sankey(df):
+def sankey(df, labels=True, show=True):
     """
     Produces a Sankey plot visualizing the filtering of the tweet data
 
     Parameters:
         df: A Pandas dataframe of Twitter data
+        labels: Whether to display the plot with labels (Boolean, default True)
+        show: Whether to display the diagram in a browser window (Boolean, default True)
     """
 
     # Initialize filtering data
@@ -1390,6 +1400,18 @@ def sankey(df):
         f_source.append(len(df_filter['user-screen_name'].drop_duplicates().tolist()) -
                         len(df_filter2['user-screen_name'].drop_duplicates().tolist()))
 
+    # Create plot labels
+    if labels is True:
+        labels = ['Time-filtered dataset (' + str(sum(f_tweet[:2])) + '/' + str(sum(f_source[:2])) + ')', '',
+                  'Source (' + str(sum(f_tweet[2:4])) + '/' + str(sum(f_source[2:4])) + ')', '', '',
+                  'Risk-image (' + str(sum(f_tweet[4:6])) + '/' + str(sum(f_source[4:6])) + ')', '',
+                  'Relevance (' + str(sum(f_tweet[6:8])) + '/' + str(sum(f_source[6:8])) + ')', '',
+                  'Forecast (' + str(f_tweet[6]) + '/' + str(f_source[6]) + ')']
+        title = 'Data Filtering (Tweet Count/Source Count)'
+    else:
+        labels = ['', '', '', '', '', '', '', '', '']
+        title = ''
+
     # Plot Sankey diagram (outputs in a browser window)
     fig = go.Figure(data=[go.Sankey(
         node=dict(
@@ -1398,11 +1420,7 @@ def sankey(df):
             line=dict(
                 color='black',
                 width=0.5),
-            label=['Time-filtered dataset (' + str(sum(f_tweet[:2])) + '/' + str(sum(f_source[:2])) + ')', '',
-                   'Source (' + str(sum(f_tweet[2:4])) + '/' + str(sum(f_source[2:4])) + ')', '', '',
-                   'Risk-image (' + str(sum(f_tweet[4:6])) + '/' + str(sum(f_source[4:6])) + ')', '',
-                   'Relevance (' + str(sum(f_tweet[6:8])) + '/' + str(sum(f_source[6:8])) + ')', '',
-                   'Forecast (' + str(f_tweet[6]) + '/' + str(f_source[6]) + ')'],
+            label=labels,
             color=['black', 'black', 'black', '#b01e36', 'black', 'black', 'black', 'black', 'black', '#251fcf']),
 
         link=dict(
@@ -1411,8 +1429,11 @@ def sankey(df):
             value=f_tweet,
             color=['#b0afcc', '#dea9b1', '#b0afcc', '#dea9b1', '#b0afcc', '#dea9b1', '#b0afcc', '#dea9b1']))])
 
-    fig.update_layout(title_text='Data Filtering (Tweet Count/Source Count)', font_size=40, font_color='black')
-    fig.show()
+    fig.update_layout(title_text=title, font_size=40, font_color='black')
+
+    # Show figure, if desired
+    if show is True:
+        fig.show()
 
 
 # NEW Figure 3
@@ -1441,7 +1462,6 @@ def timeseries_ww_wwexp_nonww(df, images, freq, dates, median, show=True, save=F
     # Slice the tweet dataframe into three seperate dataframes which include only watch/warning (non-exp),
     # watch/warning (exp), and non-watch/warning images respectively.
     images_nonww = [image for image in images if (image != 'Watch/Warning') & (image != 'Watch/Warning (Exp)')]
-    print(images_nonww)
     df_nonww = tweet_filter(df, image_range=images_nonww)
     df_ww = tweet_filter(df, image_range=['Watch/Warning'])
     df_ww_exp = tweet_filter(df, image_range=['Watch/Warning (Exp)'])
@@ -1495,15 +1515,16 @@ def timeseries_ww_wwexp_nonww(df, images, freq, dates, median, show=True, save=F
     ls = 12
 
     # Timing variables.
-    start = min(dates)
-    end = max(dates)
-    td = timedelta(hours=(freq / 120 - 5))
+    td = timedelta(hours=-5)
+    td_bar = timedelta(hours=(freq / 120 - 5))
+    start = min(dates) + td
+    end = max(dates) + td
 
     # Plot the non-watch/warning, watch/warning (non-exp), and watch/warning (exp) counts over time as a stacked bar
     # chart. Apply an offset to the x-axis (time) to ensure the bars line up properly.
-    ax0.bar(count_nonww.index + td, count_nonww, width=w, color='blue', alpha=a, label='Non-W/W')
-    ax0.bar(count_ww.index + td, count_ww, width=w, color='orange', alpha=a, label='W/W (Non-Exp)', bottom=count_nonww)
-    ax0.bar(count_ww_exp.index + td, count_ww_exp, width=w, color='green', alpha=a, label='W/W (Exp)',
+    ax0.bar(count_nonww.index + td_bar, count_nonww, width=w, color='blue', alpha=a, label='Non-W/W')
+    ax0.bar(count_ww.index + td_bar, count_ww, width=w, color='orange', alpha=a, label='W/W (Non-Exp)', bottom=count_nonww)
+    ax0.bar(count_ww_exp.index + td_bar, count_ww_exp, width=w, color='green', alpha=a, label='W/W (Exp)',
             bottom=np.array(count_nonww) + np.array(count_ww))
 
     # noinspection PyUnresolvedReferences
@@ -1548,7 +1569,7 @@ def timeseries_ww_wwexp_nonww(df, images, freq, dates, median, show=True, save=F
     date_plot = [x for x in dates if x != max(dates) and x != min(dates)]
     for ax in axes:
         for date in date_plot:
-            ax.axvline(date, color='gray', alpha=0.5)
+            ax.axvline(date + td, color='gray', alpha=0.5)
 
     # Format figure for plotting.
     plt.tight_layout()
@@ -1556,6 +1577,8 @@ def timeseries_ww_wwexp_nonww(df, images, freq, dates, median, show=True, save=F
     # Show figure, if desired.
     if show is True:
         plt.show()
+    else:
+        plt.close()
 
     # Save figure, if desired.
     if save is True:
@@ -1563,7 +1586,7 @@ def timeseries_ww_wwexp_nonww(df, images, freq, dates, median, show=True, save=F
 
 
 # Figure 4
-def rt_rate_plot(df_all, gb, metric, show=True, save=False, **kwargs):
+def rate_plot(df_all, gb, metric, title, show=True, save=False, **kwargs):
     # This function plots the cumulative median diffusion at a set of pre-calculated times after tweet creation (e.g.
     # 5 mins, 30 mins, 2h, 6h). The function plots one timeseries for each unique element in the user-provided gb
     # column name (e.g. 'image-type' or 'user-scope_aff'). If the user chooses 'image-type' as the grouby column, they
@@ -1589,101 +1612,170 @@ def rt_rate_plot(df_all, gb, metric, show=True, save=False, **kwargs):
     # Calculate the median value for each retweet diffusion column for each image or source grouping for the all image
     # dataframe.
     df1_gb = df_all.groupby([gb])[count_cols].median()
+    cols = df1_gb.columns.tolist()
+    cols.append(cols.pop(cols.index('diffusion-rt_count')))
+    df1_gb = df1_gb[cols]
 
-    # Sort the groupby by the 6h count column (the latest time value, other than the final one), transpose so that
-    # each column represents one source/image group, remove the final row, and reformat index so that it displays
-    # the number of minutes the diffusion value is calculated over (to make plotting more intuitive).
+    # Sort the groupby by final retweets and transpose so that each column represents one source/image group
     df1_gb.sort_values('diffusion-' + metric + '_count_360m', ascending=False, inplace=True)
     df1_gb = df1_gb.T
-    df1_gb = df1_gb.drop('diffusion-' + metric + '_count', axis=0)
-    df1_gb.index = [5, 10, 15, 30, 60, 120, 240, 360]
 
-    if gb == 'image-type':
-        # Obtain RGBA color values from the Tab 10 color scheme (the Matplotlib default).
-        colors = plt.cm.tab10(np.linspace(0, 1, 10))
+    # Reformat index so that it displays the number of minutes the diffusion value is calculated over
+    df1_gb.index = [5, 10, 15, 30, 60, 120, 240, 360, 400]
 
-        # Convert the RGBA values to RGB, then to hex. Append the first and second hex colors twice to account for the
-        # twelve image categories.
-        color_hex = []
-        for color in colors:
-            rgb = color[:3]
-            color_hex.append(rgb2hex(rgb))
-        color_hex.append(color_hex[0])
-        color_hex.append(color_hex[1])
+    # Define plotting variables
+    ts = 14
+    ls = 12
+    lw = 2
+    a = 0.75
+
+    # Obtain RGBA color values from the Tab 10 color scheme (the Matplotlib default).
+    colors = plt.cm.tab10(np.linspace(0, 1, 10))
+
+    # Convert the RGBA values to RGB, then to hex. Append the first and second hex colors twice to account for the
+    # twelve image categories.
+    color_hex = []
+    for color in colors:
+        rgb = color[:3]
+        color_hex.append(rgb2hex(rgb))
+    color_hex.append(color_hex[0])
+    color_hex.append(color_hex[1])
+
+    if gb == 'image-ww_map':
+        colors = ['blue', 'orange', 'green']
+        leg_cols = 3
+        adjust = 0.2
+        bboxy = -0.25
+    elif gb == 'image-branding':
+        colors = ['#603F83', '#E9738D']
+        leg_cols = 2
+        adjust = 0.2
+        bboxy = -0.25
+    elif gb == 'image-branding_X_ww':
+        colors = ['orange', 'blue', 'cornflowerblue', 'moccasin']
+        leg_cols = 2
+        adjust = 0.2
+        bboxy = -0.27
+    elif gb == 'user-scope_aff':
+        colors = color_hex
+        leg_cols = 2
+        adjust = 0.25
+        bboxy = -0.4
+    elif gb == 'image-type':
+        colors = color_hex
+        leg_cols = 2
+        adjust = 0.3
+        bboxy = -0.53
+    else:
+        colors = color_hex
+        leg_cols = 4
+        adjust = 0.2
+        bboxy = -0.25
+
+    #if gb == 'image-type':
 
         # If user includes a 'nokey' dataframe (the same dataframe but with key messages graphics removed), plot a
         # second subplot for the no key messages data. Make the image twice as wide to compensate.
-        if df_nokey is not None:
-            fig, axes = plt.subplots(1, 2, figsize=(14, 7))
+    #    if df_nokey is not None:
+    #        fig, axes = plt.subplots(1, 2, figsize=(14, 7))
 
             # Calculate the median value for each retweet diffusion column for each image for the nokey dataframe.
-            df2_gb = df_nokey.groupby([gb])[count_cols].median()
+    #        df2_gb = df_nokey.groupby([gb])[count_cols].median()
 
             # Sort the groupby by the 6h count column (the latest time value, other than the final one), transpose so
             # that each column represents one image group, remove the final row, and reformat index so that it displays
             # the number of minutes the diffusion value is calculated over (to make plotting more intuitive).
-            df2_gb.sort_values('diffusion-' + metric + '_count_360m', ascending=False, inplace=True)
-            df2_gb = df2_gb.T
-            df2_gb = df2_gb.drop('diffusion-' + metric + '_count', axis=0)
-            df2_gb.index = [5, 10, 15, 30, 60, 120, 240, 360]
+    #        df2_gb.sort_values('diffusion-' + metric + '_count_360m', ascending=False, inplace=True)
+    #        df2_gb = df2_gb.T
+    #        df2_gb = df2_gb.drop('diffusion-' + metric + '_count', axis=0)
+    #        df2_gb.index = [5, 10, 15, 30, 60, 120, 240, 360]
 
             # Plot the groupby for all images, using all the color values (the original Tab 10, plus the looped 2).
             # Include title, xlabel, ylabel, and legend.
-            df1_gb.plot(ax=axes[0], color=color_hex)
-            axes[0].set_title('Median retweet diffusion over time by image')
-            axes[0].set_xlabel('Minutes since post', labelpad=10)
-            axes[0].set_ylabel('Cumulative retweets', labelpad=20)
+    #        df1_gb.plot(ax=axes[0], color=color_hex)
+    #        axes[0].set_title('Median retweet diffusion over time by image')
+    #        axes[0].set_xlabel('Minutes since post', labelpad=10)
+    #        axes[0].set_ylabel('Cumulative retweets', labelpad=20)
 
             # Plot the groupby for the nokey dataframe. Conserve the color scheme from the first plot by only using the
             # colors for the n plot items the two plots share. Include title and xlabel (but no ylabel).
-            df2_gb.plot(ax=axes[1], color=color_hex[(len(df1_gb.columns) - len(df2_gb.columns)):])
-            axes[1].set_title('Median retweet diffusion over time by image (no key messages)')
-            axes[1].set_xlabel('Minutes since post', labelpad=10)
+    #        df2_gb.plot(ax=axes[1], color=color_hex[(len(df1_gb.columns) - len(df2_gb.columns)):])
+    #        axes[1].set_title('Median retweet diffusion over time by image (no key messages)')
+    #        axes[1].set_xlabel('Minutes since post', labelpad=10)
 
             # Create one legend for both subplots, anchored below the subplots and roughly centered. Adjust subplots to
             # make room for legend.
-            axes[0].legend(loc='upper left', bbox_to_anchor=[0.5, -0.125], ncol=3, fontsize=8)
-            axes[1].get_legend().remove()
-            fig.subplots_adjust(bottom=0.2)  # , left=0.25, right=0.9)
+    #        axes[0].legend(loc='upper left', bbox_to_anchor=[0.5, -0.125], ncol=3, fontsize=8)
+    #        axes[1].get_legend().remove()
+    #        fig.subplots_adjust(bottom=0.2)  # , left=0.25, right=0.9)
 
         # If no nokey df is provided, only plot with one subplot.
-        else:
-            fig, ax = plt.subplots(figsize=(7, 7))
+    #    else:
+    #        fig, ax = plt.subplots(figsize=(7, 7))
 
             # Plot the groupby for all images, using all the color values (the original Tab 10, plus the looped 2).
-            # Include title, xlabel, ylabel, and legend.
-            df1_gb.plot(ax=ax, color=color_hex)
-            ax.set_title('Median retweet diffusion over time by image')
-            ax.set_xlabel('Minutes since post', labelpad=10)
-            ax.set_ylabel('Cumulative retweets', labelpad=20)
-            ax.legend(loc='upper left', ncol=2, fontsize=8)
+            # Include title and labels
+    #        df1_gb.plot(ax=ax, color=color_hex)
+            #ax.set_title('Median retweet diffusion over time by ' + title, fontsize=ts)
+    #        ax.set_xlabel('Minutes since post', fontsize=ts, labelpad=10)
+    #        ax.set_ylabel('Cumulative retweets', fontsize=ts, labelpad=20)
+
+            # Modify final xtick label
+    #        labels = ['{:,.0f}'.format(x) for x in ax.get_xticks().tolist()]
+    #        print(labels)
+    #        labels[-2] = 'Final'
+    #        print(labels)
+    #        ax.set_xticklabels(labels)
+    #        ax.tick_params(labelsize=ls)
+
+            # Add legend
+    #        ax.legend(loc='upper left', ncol=2, fontsize=ls)
+
+            # Add grid
+    #        ax.grid(alpha=0.2)
 
         # Show figure, if desired.
-        if show is True:
-            plt.show()
+    #    if show is True:
+    #        plt.show()
 
         # Save figure, if desired.
-        if save is True:
-            fig.savefig('Rates\\rt_rate_image.png', dpi=300)
+    #    if save is True:
+    #        fig.savefig('Rates\\rt_rate_image.png', dpi=300)
+
+        # Close figure
+    #    plt.close()
 
     # If creating a source grouped plot, create only one subplot for all sources (using the all images dataframe).
     # Include title, xlabel, ylabel, and legend below the plot, adjusting subplot to make room. Save figure.
-    elif gb == 'user-scope_aff':
-        fig, ax = plt.subplots(figsize=(7, 7))
-        df1_gb.plot(ax=ax)
-        ax.set_title('Median retweet diffusion over time by source')
-        ax.set_xlabel('Minutes since post', labelpad=10)
-        ax.set_ylabel('Cumulative retweets', labelpad=20)
-        ax.legend(loc='upper left', bbox_to_anchor=[-0.05, -0.125], ncol=4, fontsize=8)
-        fig.subplots_adjust(bottom=0.2)  # , left=0.2, right=0.9)
+    #else:
+    fig, ax = plt.subplots(figsize=(7, 7))
+    df1_gb.plot(ax=ax, color=colors, alpha=a, linewidth=lw)
+    #ax.set_title('Median retweet diffusion over time by ' + title, fontsize=ts)
+    ax.set_xlabel('Minutes since post', fontsize=ts, labelpad=10)
+    ax.set_ylabel('Cumulative retweets', fontsize=ts, labelpad=15)
 
-        # Show figure, if desired.
-        if show is True:
-            plt.show()
+    # Modify final xtick label
+    labels = ['{:,.0f}'.format(x) for x in ax.get_xticks().tolist()]
+    labels[-2] = 'Final'
+    ax.set_xticklabels(labels)
+    ax.tick_params(labelsize=ls)
 
-        # Save figure, if desired.
-        if save is True:
-            fig.savefig('Rates\\rt_rate_source.png', dpi=300)
+    # Add legend
+    ax.legend(loc='lower center', bbox_to_anchor=[0.5, bboxy], ncol=leg_cols, fontsize=ls)
+    fig.subplots_adjust(bottom=adjust)  # , left=0.2, right=0.9)
+
+    # Add grid
+    ax.grid(alpha=0.2)
+
+    # Show figure, if desired.
+    if show is True:
+        plt.show()
+    else:
+        plt.close()
+
+    # Save figure, if desired.
+    #if save is True:
+    #        fig.savefig('Rates\\rt_rate_source.png', dpi=300)
 
 
 # Figure 5/7 - not created yet
@@ -2618,7 +2710,7 @@ def basic_scatter(df_calc, df_final, show=True, save=False):
         plt.show()
 
 
-def scatter_size(df):
+def scatter_size(df, show=True):
     """
     Plots a retweet-reply scatter plot where the area of the points are proportional to the number of occurences of
         that retweet/reply combination, and where the axes use the "symlog" scale in order to show all of the data in
@@ -2626,6 +2718,7 @@ def scatter_size(df):
 
     Parameters:
         df: A tweet dataframe with retweet and reply data (Pandas dataframe)
+        show: Whether to display the figure (Boolean, default True)
     """
 
     # Count the occurence of each unique retweet/reply count combination
@@ -2666,7 +2759,14 @@ def scatter_size(df):
               fontsize=14)
     fig.subplots_adjust(bottom=0.2, left=0.15, right=0.95)
 
-    plt.show()
+    # Show, if desired
+    if show is True:
+        plt.show()
+    else:
+        plt.close()
+
+    # Close figure
+    plt.close()
 
 
 def scatter_kde(df):
@@ -2747,6 +2847,7 @@ def scatter_transparent(df):
     ax.set_title('All tweets', fontsize=18)
 
     plt.show()
+
 
 def timeseries_line(df, freq, gb, sum_metric, dates, show=True, save=False):
     # This function creates a plot that displays the tweet count and the retweet count over time for each unique element
