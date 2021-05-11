@@ -18,8 +18,8 @@ if 'image-type_meso-disc_spc' in pd.read_csv(f).columns:
     print('Mesoscale discussion coding already merged with previously coded data')
 
 else:
-    md_coded = pd.merge(pd.read_csv(f), pd.read_csv(f_coded)[['tweet-id', 'image-type_meso-disc_spc',
-                                                              'image-type_meso-disc_wpc']], on='tweet-id', how='outer')
+    md_coded = pd.merge(pd.read_csv(f), pd.read_csv(f_coded)[
+        ['tweet-id_trunc', 'image-type_meso-disc_spc', 'image-type_meso-disc_wpc']], on='tweet-id_trunc', how='outer')
 
     # Reformat columns
     for col in md_coded.columns:

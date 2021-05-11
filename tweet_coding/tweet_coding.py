@@ -1,6 +1,9 @@
 import pandas as pd
+import numpy as np
 from .coding import *
 
+yes_vals = ['y', 'Yes', 'Y', 'yes', '1']
+no_vals = ['n', 'No', 'N', 'no', '0']
 all_in = ['y', 'Yes', 'Y', 'yes', '1', 'n', 'No', 'N', 'no', '0', 'na', 'nan', 'none', '', 'Not Available']
 all_out = ['yes', 'yes', 'yes', 'yes', 'yes', 'no', 'no', 'no', 'no', 'no', 'Not Available', 'Not Available',
            'Not Available', '', 'Not Available']
@@ -58,21 +61,49 @@ def rel_fore_coding(cfile, dfile, direc, ctype, codecols, datecol):
                          time
     """
     # Read and parse Twitter data
-    coded, to_code = readdata(cfile, dfile, direc, ctype, codecols, datecol, select_col='hrisk_img',
-                                            select_crit='yes')
+    coded, to_code = readdata(cfile, dfile, direc, ctype, codecols, datecol)
 
     # For each tweet yet to be coded...
     for i in range(0, len(to_code)):
         # Display each tweet in an incognito Chrome tab
-        display_tweet(to_code['link'].iloc[i])
+        display_tweet(to_code['tweet-url'].iloc[i])
 
         # Code the tweets for relevance and forecast information
-        rel_in = code_tweet('Is this tweet relevant to Hurricane Harvey?', all_in)
-        fore_in = code_tweet('Does this tweet contain forecast information relevant to Harvey?', all_in)
+        del_qt_in = code_tweet('Is this a deleted quote tweet?', all_in)
+
+        if set(del_qt_in).issubset(set(no_vals)) is True:
+            rel_in = code_tweet('Is this tweet relevant to Hurricane Irma?', all_in)
+
+            if set(rel_in).issubset(set(yes_vals)) is True:
+                spanish_in = code_tweet('Does this tweet contain information relevant to Hurricane Irma in Spanish?',
+                                        all_in)
+
+                if set(spanish_in).issubset(set(no_vals)):
+                    fore_in = code_tweet('Does this tweet contain forecast information relevant to Irma?', all_in)
+                    loc_rel_in = code_tweet('Does this tweet contain Irma information relevant to areas of the '
+                                            'continental United States affected by Irma?', all_in)
+
+                else:
+                    fore_in = ''
+                    loc_rel_in = ''
+
+            else:
+                spanish_in = ''
+                fore_in = ''
+                loc_rel_in = ''
+
+        else:
+            rel_in = ''
+            spanish_in = ''
+            fore_in = ''
+            loc_rel_in = ''
 
         # Add coded input value to dataframe
+        to_code['deleted_qt'].iloc[i] = del_qt_in
         to_code['relevant'].iloc[i] = rel_in
+        to_code['spanish'].iloc[i] = spanish_in
         to_code['forecast'].iloc[i] = fore_in
+        to_code['local_relevant'].iloc[i] = loc_rel_in
 
         # Map various inputs to either 'yes', 'no', or 'Not Available' (for tweets that don't display in browswer
         # because they were deleted).
