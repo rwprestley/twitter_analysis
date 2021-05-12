@@ -35,19 +35,22 @@ def readdata(how, order):
 
     if how == 'calc':
         # Merge original HIMN data and missing data together
-        tweets = ttk.merge(him_all_file='himn_116k_simple.csv', himn_coded_file='Data\\harvey_irma_twitter_data.csv',
-                           old_missing_all_file='tweets_old_missing.csv',
-                           old_missing_fore_file='Data\\tweet_data_missing_forecast.csv',
-                           new_missing_file='New Missing (Dec 2020)\\new_missing_coded.csv',
-                           orig_file='origs_missing_coded.csv', start=harvey_start, end=harvey_end)
+        tweets = ttk.merge(him_all_file='HIM Data\\himn_116k_simple.csv',
+                           himn_coded_file='Harvey\\Data\\himn_coded.csv',
+                           old_missing_all_file='Harvey\\Data\\tweets_old_missing.csv',
+                           old_missing_fore_file='Harvey\\Data\\tweet_data_missing_forecast.csv',
+                           new_missing_file='Harvey\\Data\\new_missing_coded.csv',
+                           orig_file='HIM Data\\him_origs_coded.csv',
+                           start=harvey_start,
+                           end=harvey_end)
 
         # Calculate diffusion counts, overall and over time
-        tweets = ttk.diff_calc_basic(tweets, 'Data\\harvey_tweet_diffusion_files')
-        tweets = ttk.tweet_diffusion_calc(tweets, 'Data', 'harvey_tweet_diffusion_files')
+        tweets = ttk.diff_calc_basic(tweets, 'Harvey\\Data\\harvey_tweet_diffusion_files')
+        tweets = ttk.tweet_diffusion_calc(tweets, 'Harvey\\Data', 'harvey_tweet_diffusion_files')
 
         # Merge mesoscale discussion coding with tweet data file
-        md_codes = pd.read_csv('test_md_coded.csv')[['tweet-id_trunc', 'image-type_meso-disc_spc',
-                                                     'image-type_meso-disc_wpc']]
+        md_codes = pd.read_csv('Harvey\\Data\\md_coded.csv')[['tweet-id_trunc', 'image-type_meso-disc_spc',
+                                                              'image-type_meso-disc_wpc']]
         md_codes['tweet-id_trunc'] = md_codes['tweet-id_trunc'].astype(str)
         tweets['tweet-id_trunc'] = tweets['tweet-id_trunc'].astype(str)
         tweets = pd.merge(tweets, md_codes, on='tweet-id_trunc', how='outer')
@@ -67,11 +70,11 @@ def readdata(how, order):
         tweets[numeric_columns] = tweets[numeric_columns].fillna(0)
 
         # Output
-        tweets.to_csv('tweets_HIM.csv')
+        tweets.to_csv('HIM Data\\tweets_HIM.csv')
 
     elif how == 'read':
         # Read in data
-        tweets = pd.read_csv('tweets_HIM.csv')
+        tweets = pd.read_csv('HIM Data\\tweets_HIM.csv')
 
     else:
         tweets = pd.DataFrame()
