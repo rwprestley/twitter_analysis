@@ -78,32 +78,40 @@ def rel_fore_coding(cfile, dfile, direc, ctype, codecols, datecol):
                 spanish_in = code_tweet('Does this tweet contain information relevant to Hurricane Irma in Spanish?',
                                         all_in)
 
-                if set(spanish_in).issubset(set(no_vals)):
-                    fore_in = code_tweet('Does this tweet contain forecast information relevant to Irma?', all_in)
-                    loc_rel_in = code_tweet('Does this tweet contain Irma information relevant to areas of the '
-                                            'continental United States affected by Irma?', all_in)
+                #if set(spanish_in).issubset(set(yes_vals)) is True:
+                    #can_code_in = code_tweet('Can a coding judgement be made for forecast and local relevance?', all_in)
 
-                else:
-                    fore_in = ''
-                    loc_rel_in = ''
+                    #if set(can_code_in).issubset(set(yes_vals)) is True:
+                        #fore_in = code_tweet('Does this tweet contain forecast information relevant to Irma?', all_in)
+                        #loc_rel_in = code_tweet('Does this tweet contain Irma information relevant to areas of the '
+                        #                        'continental United States affected by Irma?', all_in)
+
+                    #else:
+                        #fore_in = ''
+                        #loc_rel_in = ''
+
+                #else:
+                    #fore_in = code_tweet('Does this tweet contain forecast information relevant to Irma?', all_in)
+                    #loc_rel_in = code_tweet('Does this tweet contain Irma information relevant to areas of the '
+                     #                       'continental United States affected by Irma?', all_in)
 
             else:
                 spanish_in = ''
-                fore_in = ''
-                loc_rel_in = ''
+                #fore_in = ''
+                #loc_rel_in = ''
 
         else:
             rel_in = ''
             spanish_in = ''
-            fore_in = ''
-            loc_rel_in = ''
+            #fore_in = ''
+            #loc_rel_in = ''
 
         # Add coded input value to dataframe
         to_code['deleted_qt'].iloc[i] = del_qt_in
         to_code['relevant'].iloc[i] = rel_in
         to_code['spanish'].iloc[i] = spanish_in
-        to_code['forecast'].iloc[i] = fore_in
-        to_code['local_relevant'].iloc[i] = loc_rel_in
+        #to_code['forecast'].iloc[i] = fore_in
+        #to_code['local_relevant'].iloc[i] = loc_rel_in
 
         # Map various inputs to either 'yes', 'no', or 'Not Available' (for tweets that don't display in browswer
         # because they were deleted).
