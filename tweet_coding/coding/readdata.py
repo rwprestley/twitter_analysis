@@ -2,7 +2,7 @@ import os
 import pandas as pd
 
 
-def readdata(cfile, dfile, direc, ctype, codecols, datecol, **kwargs):
+def readdata(cfile, dfile, direc, ctype, codecols, datecols, **kwargs):
     """
     Read data from a Twitter database
 
@@ -13,7 +13,7 @@ def readdata(cfile, dfile, direc, ctype, codecols, datecol, **kwargs):
         ctype: A text string denoting the type of coding being done (e.g. 'Risk image', 'Relevance and forecast'). First
                   letter should be capitalized.
         codecols: A list of strings, where each string represents a column where coded data is stored
-        datecol: A text string denoting the Pandas column name of the data to be saved that represents the date and
+        datecols: A text string denoting the Pandas column name of the data to be saved that represents the date and
                          time
     """
     # If coding file does not exist yet, coding has not been initiated.
@@ -34,7 +34,7 @@ def readdata(cfile, dfile, direc, ctype, codecols, datecol, **kwargs):
         for col in codecols:
             to_code[col] = ''
 
-        to_code.sort_values(datecol, inplace=True)
+        to_code.sort_values(datecols, inplace=True)
 
         # Create an empty coded dataframe.
         coded = pd.DataFrame()

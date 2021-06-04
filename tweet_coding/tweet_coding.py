@@ -47,7 +47,7 @@ def risk_image_coding(cfile, dfile, direc, ctype, codecols, datecol):
         display_progress(tweetdata, codecols, ctype, ['yes', 'no', 'Not Available'])
 
 
-def rel_fore_coding(cfile, dfile, direc, ctype, codecols, datecol):
+def rel_fore_coding(cfile, dfile, direc, ctype, codecols, datecols):
     """
     Code tweets for relevant, forecast information
 
@@ -57,11 +57,11 @@ def rel_fore_coding(cfile, dfile, direc, ctype, codecols, datecol):
         direc:
         ctype:
         codecols:
-        datecol: A text string denoting the Pandas column name of the data to be saved that represents the date and
+        datecols: A text string denoting the Pandas column name of the data to be saved that represents the date and
                          time
     """
     # Read and parse Twitter data
-    coded, to_code = readdata(cfile, dfile, direc, ctype, codecols, datecol)
+    coded, to_code = readdata(cfile, dfile, direc, ctype, codecols, datecols)
 
     # For each tweet yet to be coded...
     for i in range(0, len(to_code)):
@@ -118,7 +118,7 @@ def rel_fore_coding(cfile, dfile, direc, ctype, codecols, datecol):
         to_code = map_input(to_code, codecols, all_in, all_out)
 
         # Save the updated coded file after each tweet is coded.
-        tweetdata = save_coding(coded, to_code, cfile, direc, datecol)
+        tweetdata = save_coding(coded, to_code, cfile, direc, datecols)
 
         # Display coding progress.
         display_progress(tweetdata, codecols, ctype, ['yes', 'no', 'Not Available'])
