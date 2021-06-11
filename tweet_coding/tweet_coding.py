@@ -69,13 +69,13 @@ def rel_fore_coding(cfile, dfile, direc, ctype, codecols, datecols):
         display_tweet(to_code['tweet-url'].iloc[i])
 
         # Code the tweets for relevance and forecast information
-        del_qt_in = code_tweet('Is this a deleted quote tweet?', all_in)
+        del_qt_in = code_tweet('\nIs this a deleted quote tweet?', all_in)
 
         if set(del_qt_in).issubset(set(no_vals)) is True:
-            rel_in = code_tweet('Is this tweet relevant to Hurricane Irma?', all_in)
+            rel_in = code_tweet('\nIs this tweet relevant to Hurricane Irma?', all_in)
 
             if set(rel_in).issubset(set(yes_vals)) is True:
-                spanish_in = code_tweet('Does this tweet contain information relevant to Hurricane Irma in Spanish?',
+                spanish_in = code_tweet('\nDoes this tweet contain information relevant to Hurricane Irma in Spanish?',
                                         all_in)
 
                 #if set(spanish_in).issubset(set(yes_vals)) is True:

@@ -18,7 +18,7 @@ def readdata(cfile, dfile, direc, ctype, codecols, datecols, **kwargs):
     """
     # If coding file does not exist yet, coding has not been initiated.
     if (cfile in os.listdir(direc)) is not True:
-        print(ctype + ' coding has not been initiated')
+        print(ctype + ' coding has not been initiated\n')
 
         # Create a dataframe with tweets to be coded.
         to_code = pd.read_csv(direc + '\\' + dfile)
