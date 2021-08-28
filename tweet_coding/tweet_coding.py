@@ -47,7 +47,7 @@ def risk_image_coding(cfile, dfile, direc, ctype, codecols, datecol):
         display_progress(tweetdata, codecols, ctype, ['yes', 'no', 'Not Available'])
 
 
-def rel_fore_coding(cfile, dfile, direc, ctype, codecols, datecols):
+def filter_coding(cfile, dfile, direc, ctype, codecols, datecols):
     """
     Code tweets for relevant, forecast information
 
@@ -236,3 +236,80 @@ def md_coding(cfile, dfile, direc, ctype, codecols, datecol):
 
         # Display coding progress.
         display_progress(tweetdata, codecols, ctype, ['yes'])
+
+
+def hazard_risk_coding(cfile, dfile, direc, ctype, datecols, url_col):
+    """
+        Code tweets for hazard and risk information type
+
+        Parameters:
+            cfile: A text string denoting what the coded data should be saved as
+            dfile: A text string denoting the existing data that should be coded
+            direc: A text string denoting the directory that the existing data and newly coded data should be saved in
+            ctype: A text string denoting the type of coding being done (e.g. 'Risk image', 'Relevance and forecast').
+                       First letter should be capitalized.
+            datecols: A list of column(s) to sort the data by (e.g. date, username, etc.)
+            url_col: A text string denoting the column name of the tweet URL field
+        """
+
+    # Define column names for each hazard and risk code.
+    hazard_cols = ['tc', 'surge', 'rain/flood', 'convective', 'non-haz', 'mult_haz']
+    risk_cols = ['forecast', 'ww', 'obs', 'past', 'non-risk', 'mult_risk']
+    all_cols = hazard_cols + risk_cols
+
+    # Read and parse Twitter data
+    coded, to_code = readdata(cfile, dfile, direc, ctype, all_cols, datecols)
+
+    # For each tweet yet to be coded...
+    for i in range(0, len(to_code)):
+
+        # Display the tweet in an incognito Chrome tab
+        display_tweet(to_code[url_col].iloc[i])
+
+        # Code the tweets for hazard
+        nan_in = ['0', 'na', 'nan', 'none', '', 'Not Available']
+        haz_in_cols = [col for col in hazard_cols if col != 'mult_haz']
+        all_haz_in = haz_in_cols + nan_in
+        haz_in = code_tweet('Which hazard(s) is/are predominantly represented in this tweet?', all_haz_in)
+
+        # Code the tweets for risk information
+        risk_in_cols = [col for col in risk_cols if col != 'mult_risk']
+        all_risk_in = risk_in_cols + nan_in
+        risk_in = code_tweet('Which type(s) of risk information is/are predominantly represented in this tweet?',
+                             all_risk_in)
+
+        # Add hazard codes to dataframe from input
+        for col in haz_in_cols:
+            if col in haz_in:
+                to_code[col].iloc[i] = ['y']
+            else:
+                to_code[col].iloc[i] = ['n']
+
+            # Automatically code "multiple" where multiple hazards are coded
+            if len(haz_in) > 1:
+                to_code['mult_haz'].iloc[i] = ['y']
+            else:
+                to_code['mult_haz'].iloc[i] = ['n']
+
+        # Add risk information codes to dataframe from input
+        for col in risk_in_cols:
+            if col in risk_in:
+                to_code[col].iloc[i] = ['y']
+            else:
+                to_code[col].iloc[i] = ['n']
+
+                # Automatically code "multiple" where multiple risk information types are coded
+                if len([rtype for rtype in risk_in if rtype != 'ww']) > 1:
+                    to_code['mult_risk'].iloc[i] = ['y']
+                else:
+                    to_code['mult_risk'].iloc[i] = ['n']
+
+        # Map various inputs to either 'yes', 'no', or 'Not Available' (for tweets that don't display in browswer
+        # because they were deleted).
+        to_code = map_input(to_code, all_cols, all_in, all_out)
+
+        # Save the updated coded file after each tweet is coded.
+        tweetdata = save_coding(coded, to_code, cfile, direc, datecols)
+
+        # Display coding progress.
+        display_progress(tweetdata, all_cols, ctype, ['yes'])
