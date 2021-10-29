@@ -13,7 +13,7 @@ def display_progress(tweetdata, codecols, ctype, disptypes):
     # Display overall coding progress.
     coded = len(tweetdata.loc[tweetdata[codecols[0]] != ''])
     tot = len(tweetdata)
-    per_comp = '{:.1%}'.format(coded / tot)
+    per_comp = '{:.2%}'.format(coded / tot)
     print('\n' + ctype + ' coding completed: ' + str(coded) + '/' + str(tot) + ' (' + str(per_comp) + ')')
 
     # Display coding results for each provided data column.

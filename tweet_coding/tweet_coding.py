@@ -253,8 +253,8 @@ def hazard_risk_coding(cfile, dfile, direc, ctype, datecols, url_col):
         """
 
     # Define column names for each hazard and risk code.
-    hazard_cols = ['tc', 'surge', 'rain/flood', 'convective', 'non-haz', 'mult_haz']
-    risk_cols = ['forecast', 'ww', 'obs', 'past', 'non-risk', 'mult_risk']
+    hazard_cols = ['tc', 'surge', 'rain/flood', 'convective', 'haz_other', 'haz_mult']
+    risk_cols = ['forecast', 'ww', 'obs', 'past', 'risk_other', 'risk_mult']
     all_cols = hazard_cols + risk_cols
 
     # Read and parse Twitter data
@@ -268,12 +268,12 @@ def hazard_risk_coding(cfile, dfile, direc, ctype, datecols, url_col):
 
         # Code the tweets for hazard
         nan_in = ['0', 'na', 'nan', 'none', '', 'Not Available']
-        haz_in_cols = [col for col in hazard_cols if col != 'mult_haz']
+        haz_in_cols = [col for col in hazard_cols if col != 'haz_mult']
         all_haz_in = haz_in_cols + nan_in
         haz_in = code_tweet('Which hazard(s) is/are predominantly represented in this tweet?', all_haz_in)
 
         # Code the tweets for risk information
-        risk_in_cols = [col for col in risk_cols if col != 'mult_risk']
+        risk_in_cols = [col for col in risk_cols if col != 'risk_mult']
         all_risk_in = risk_in_cols + nan_in
         risk_in = code_tweet('Which type(s) of risk information is/are predominantly represented in this tweet?',
                              all_risk_in)
@@ -287,9 +287,9 @@ def hazard_risk_coding(cfile, dfile, direc, ctype, datecols, url_col):
 
             # Automatically code "multiple" where multiple hazards are coded
             if len(haz_in) > 1:
-                to_code['mult_haz'].iloc[i] = ['y']
+                to_code['haz_mult'].iloc[i] = ['y']
             else:
-                to_code['mult_haz'].iloc[i] = ['n']
+                to_code['haz_mult'].iloc[i] = ['n']
 
         # Add risk information codes to dataframe from input
         for col in risk_in_cols:
@@ -300,9 +300,9 @@ def hazard_risk_coding(cfile, dfile, direc, ctype, datecols, url_col):
 
                 # Automatically code "multiple" where multiple risk information types are coded
                 if len([rtype for rtype in risk_in if rtype != 'ww']) > 1:
-                    to_code['mult_risk'].iloc[i] = ['y']
+                    to_code['risk_mult'].iloc[i] = ['y']
                 else:
-                    to_code['mult_risk'].iloc[i] = ['n']
+                    to_code['risk_mult'].iloc[i] = ['n']
 
         # Map various inputs to either 'yes', 'no', or 'Not Available' (for tweets that don't display in browswer
         # because they were deleted).

@@ -3,8 +3,8 @@ from tweet_coding.tweet_coding import filter_coding, hazard_risk_coding
 pd.options.mode.chained_assignment = None
 
 # Read in file and folder where coded data is stored.
-f = 'irma_rel_samp2_100.csv'
-fcoded = 'irma_rel_samp2_100_coded_rp.csv'
+f = 'irma_rel_to_code.csv'
+fcoded = 'irma_rel_coded.csv'
 d = 'Irma\\Data\\Content Coding - Phase 1'
 datecols = ['created_at']
 
