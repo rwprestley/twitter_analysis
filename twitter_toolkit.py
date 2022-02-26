@@ -1283,31 +1283,33 @@ def rt_timeseries_table(df, gb, metric, show=True, save=False):
 
 
 # <editor-fold desc="Figures">
-def sankey(df, labels=True, show=True):
+def sankey(df, filters, user_col, labels=True, show=True):
     """
     Produces a Sankey plot visualizing the filtering of the tweet data
 
     Parameters:
         df: A Pandas dataframe of Twitter data
+        filters: List of columns to use to filter the data (list of strings)
+        user_col: Name of column that stores user username data (string)
         labels: Whether to display the plot with labels (Boolean, default True)
         show: Whether to display the diagram in a browser window (Boolean, default True)
     """
 
     # Initialize filtering data
     df_filter = df.copy()
-    filters = ['time', 'source', 'risk', 'relevant', 'forecast']
+    #filters = ['time', 'source', 'risk', 'relevant', 'forecast']
     f_tweet = []
     f_source = []
 
     # Create tweet and source counts for each filtering step, for use in Sankey diagram
     for i in np.arange(0, len(filters) - 1):
-        df_filter = df_filter.loc[df_filter['filter-' + filters[i]] == 1]
-        df_filter2 = df_filter.loc[df_filter['filter-' + filters[i+1]] == 1]
+        df_filter = df_filter.loc[df_filter[filters[i]] == 1]
+        df_filter2 = df_filter.loc[df_filter[filters[i+1]] == 1]
         f_tweet.append(len(df_filter2))
         f_tweet.append(len(df_filter) - len(df_filter2))
-        f_source.append(len(df_filter2['user-screen_name'].drop_duplicates().tolist()))
-        f_source.append(len(df_filter['user-screen_name'].drop_duplicates().tolist()) -
-                        len(df_filter2['user-screen_name'].drop_duplicates().tolist()))
+        f_source.append(len(df_filter2[user_col].drop_duplicates().tolist()))
+        f_source.append(len(df_filter[user_col].drop_duplicates().tolist()) -
+                        len(df_filter2[user_col].drop_duplicates().tolist()))
 
     # Create plot labels
     if labels is True:
@@ -1330,7 +1332,7 @@ def sankey(df, labels=True, show=True):
                 color='black',
                 width=0.5),
             label=labels,
-            color=['black', 'black', 'black', '#b01e36', 'black', 'black', 'black', 'black', 'black', '#251fcf']),
+            color=['black', 'black', 'black', '#b01e36', 'black', '#251fcf']),
 
         link=dict(
             source=[0, 0, 2, 2, 5, 5, 7, 7],
@@ -1737,6 +1739,7 @@ def timeline(df, value_cols, values, labels, size_col, color_col, dates, datetim
         color_col: A string name of a column in the Twitter dataframe to be used to determine the color of the tweet in
                        the plot
         dates: A list of timezone-aware datetime objects that include the start of the plot and the end of the plot
+        datetime_col: String name of column where tweet date/time are stored
         zeros: Whether to show tweets with zero retweets on the plot (Boolean; default True)
         show: Whether to display the image (Boolean; default True)
         save: Whether to save the image (Boolean; default False)
@@ -1748,16 +1751,33 @@ def timeline(df, value_cols, values, labels, size_col, color_col, dates, datetim
          Dates can include other dates beside start and end of the plot, but they will not be plotted.
     """
 
-    # Create a figure and set plotting variables.
-    fig, ax = plt.subplots(figsize=(11, 8.5))
+    # Create a figure and set orientation based on the number of categories.
+    if len(values) > 10:
+        fig, ax = plt.subplots(figsize=(8.5, 11))
+    else:
+        fig, ax = plt.subplots(figsize=(11, 8.5))
+
+    # Set plotting variables
     ec = 'black'
     lw = 0.5
     a = 0.5
     fs = 14
     ls = 12
     y = 1
-    ydelta = 0.1
     yticks = []
+
+    # Set differential plotting variables for specific plot formats (e.g. plotting dates as the y-axis and time as the
+    # x-axis).
+    if value_cols == ['date']:
+        strform = '%I %p'
+        time_delta = timedelta(hours=6)
+        leg_cols = 1
+        leg_bboxX = 0.8
+    else:
+        strform = '%b-%d'
+        time_delta = timedelta(days=1)
+        leg_cols = 2
+        leg_bboxX = 0.75
 
     # Timing variables.
     start = min(dates)
@@ -1793,6 +1813,13 @@ def timeline(df, value_cols, values, labels, size_col, color_col, dates, datetim
         d2 = 'Organization'
         title = 'agency'
 
+    elif color_col == 'bot_tweet':
+        c1 = 'lightskyblue'
+        d1 = 'Non-bot'
+        c2 = 'white'
+        d2 = 'Bot'
+        title = 'bot'
+
     else:
         print('Your selected color column: ' + color_col)
         c1 = input('Please provide a color to represent the first value.')
@@ -1803,7 +1830,7 @@ def timeline(df, value_cols, values, labels, size_col, color_col, dates, datetim
 
     # Set size title based on size column. If the user-provided size column does not match the options given, allow them
     # to choose the title based on their chosen column.
-    if size_col == 'diffusion-rt_count':
+    if (size_col == 'diffusion-rt_count') | (size_col == 'retweet_count'):
         size_title = 'rt'
     elif size_col == 'diffusion-reply_count':
         size_title = 'reply'
@@ -1816,16 +1843,16 @@ def timeline(df, value_cols, values, labels, size_col, color_col, dates, datetim
         add = 1
     else:
         add = 0
-    
+
     # Loop over each unique value in the user-provided value column.
     for col in value_cols:
         for value in values:
             # Split the dataframe in to two based on the value of the color column.
-            tweets_c1 = df.loc[(df[col] == value) & (df[color_col] == 1)]
-            tweets_c2 = df.loc[(df[col] == value) & (df[color_col] != 1)]
+            tweets_c1 = df.loc[(df[col] == value) & (df[color_col] != 1)]
+            tweets_c2 = df.loc[(df[col] == value) & (df[color_col] == 1)]
 
-            # Add a value to the size column depending on whether the user chooses to visualize zeros or not (the add value
-            # is 1 if zeros are included and 0 if not).
+            # Add a value to the size column depending on whether the user chooses to visualize zeros or not (the add
+            # value is 1 if zeros are included and 0 if not).
             tweets_c1[size_col] = tweets_c1[size_col] + add
             tweets_c2[size_col] = tweets_c2[size_col] + add
 
@@ -1835,8 +1862,16 @@ def timeline(df, value_cols, values, labels, size_col, color_col, dates, datetim
             tweets_c2.sort_values(by=datetime_col, inplace=True)
             times_c2 = tweets_c2[datetime_col]
 
-            # Plot the split dataframes at the same y-value (all in one line), where the x-value is the time the tweet was
-            # posted. Size the circles by the user-provided size column. Vary the split dataframes by color.
+            # Add space before and after each row in relation to the size of the largest "bubble" in each row
+            if (tweets_c1[size_col].max() >= tweets_c2[size_col].max()) | (len(tweets_c2) == 0):
+                y_add = tweets_c1[size_col].max()**0.5
+            else:
+                y_add = tweets_c2[size_col].max()**0.5
+
+            y += y_add
+
+            # Plot the split dataframes at the same y-value (all in one line), where the x-value is the time the tweet
+            # was posted. Size the circles by the user-provided size column. Vary the split dataframes by color.
             ax.scatter(times_c1, [y] * len(times_c1), alpha=a,
                        s=tweets_c1[size_col], edgecolor=ec, linewidth=lw, c=c1)
             ax.scatter(times_c2, [y] * len(times_c2), alpha=a,
@@ -1846,17 +1881,16 @@ def timeline(df, value_cols, values, labels, size_col, color_col, dates, datetim
             yticks.append(y)
 
             # Increment y by ydelta before moving on to the next value.
-            y += ydelta
+            y += y_add
 
     # Set xticks and xticklabels by hand so they correspond to local time (UTC -5). Draw a vertical line at midnight
     # local time for each day in the time range.
-    time_delta = timedelta(days=1)
     xticks = []
     xticklabels = []
-    ax.set_xlim(start, end)
+    #ax.set_xlim(start, end)
     while start <= end:
         xticks.append(start)
-        xticklabels.append(start.strftime('%b-%d'))
+        xticklabels.append(start.strftime(strform))
         plt.axvline(start, c='gray', alpha=0.25)
         start += time_delta
     ax.set_xticks(xticks)
@@ -1867,6 +1901,8 @@ def timeline(df, value_cols, values, labels, size_col, color_col, dates, datetim
     ax.set_yticks(yticks)
     ax.set_yticklabels(labels)
     ax.tick_params(axis='y', labelsize=fs, length=0)
+    ymin, ymax = ax.get_ylim()
+    ax.set_ylim(ymin, y)
 
     # Remove borders on right, left, and top of image.
     ax.spines['right'].set_visible(False)
@@ -1876,7 +1912,8 @@ def timeline(df, value_cols, values, labels, size_col, color_col, dates, datetim
     # Manually set legend for color values.
     legend_elements1 = [Patch(facecolor=c1, edgecolor='black', label=d1),
                         Patch(facecolor=c2, edgecolor='black', label=d2)]
-    fig.legend(handles=legend_elements1, loc='lower center', bbox_to_anchor=[0.75, 0.05], ncol=4, fontsize=ls)
+    fig.legend(handles=legend_elements1, loc='lower center', bbox_to_anchor=[leg_bboxX, 0.05], ncol=leg_cols,
+               fontsize=ls)
 
     # Manually set legend for size values.
     size = [10, 100, 1000]
@@ -1893,7 +1930,7 @@ def timeline(df, value_cols, values, labels, size_col, color_col, dates, datetim
 
     # Save figure, if desired.
     if save is True:
-        fig.savefig('timeline_' + title + '_' + size_title + '.png', dpi=300)
+        fig.savefig('timeline_' + value_cols[0] + '_' + title + '_' + size_title + '.png', dpi=300, bbox_inches='tight')
 
     # Show figure, if desired.
     if show is True:
@@ -2952,7 +2989,7 @@ def url_display(df):
     # Select an image dataset and display all URLs in browser.
     url = df['tweet-url']
     locs = list(range(0, len(url)))
-    chrome_path = 'C:/Program Files (x86)/Google/Chrome/Application/chrome.exe %s --incognito'
+    chrome_path = 'C:/Program Files/Google/Chrome/Application/chrome.exe %s --incognito'
     for i in locs:
         webbrowser.get(chrome_path).open_new_tab(url.iloc[i])
 # </editor-fold>
