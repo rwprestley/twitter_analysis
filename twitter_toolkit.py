@@ -388,10 +388,10 @@ def new_missing_convert(file, orig_file):
 
     # Rename other columns
     new_missing_df.rename(columns={'image-type_text-img': 'image-type_text', 'official': 'image-branding_off',
-                               'unofficial': 'image-branding_unoff', 'spanish': 'image-lang_spanish',
-                               'forecast': 'filter-forecast', 'relevant': 'filter-relevant',
-                               'tweet_type': 'tweet-type', 'text': 'tweet-text', 'created_at': 'tweet-created_at',
-                               'id': 'tweet-id', 'hrisk_img': 'filter-risk'}, inplace=True)
+                                   'unofficial': 'image-branding_unoff', 'spanish': 'image-lang_spanish',
+                                   'forecast': 'filter-forecast', 'relevant': 'filter-relevant',
+                                   'tweet_type': 'tweet-type', 'text': 'tweet-text', 'created_at': 'tweet-created_at',
+                                   'id': 'tweet-id', 'hrisk_img': 'filter-risk'}, inplace=True)
 
     # Create truncated id column.
     new_missing_df['tweet-id_trunc'] = new_missing_df['tweet-id'].astype(str).str[:15]
@@ -501,8 +501,8 @@ def diff_calc_basic(df, diff_folder):
     # Calculate diffusion for each tweet in diffusion folder.
     for id in df.index:
         if str(id) + '.json' in os.listdir(diff_folder):
-    #for filename in os.listdir(diff_folder):
-    #    if (filename[:18] in df.index) is True:
+            # for filename in os.listdir(diff_folder):
+            # if (filename[:18] in df.index) is True:
             with open(diff_folder + '\\' + str(id) + '.json', 'r') as f:
                 data = json.load(f)
 
@@ -591,7 +591,7 @@ def tweet_diffusion_calc(tweet_df, data_folder, diff_folder):
                     for time in rate_times:
                         tweet_df.loc[filename[:18], 'diffusion-' + metric + '_count_' + str(time) + 'm'] = len(
                             data_df.loc[(data_df['tweet-type'] == metric) & (data_df['delta'] <= time)])
-                        #tweet_df.loc[filename[:18], 'diffusion-' + metric + '_rate_' + str(time) + 'm'] = len(
+                        # tweet_df.loc[filename[:18], 'diffusion-' + metric + '_rate_' + str(time) + 'm'] = len(
                         #    data_df.loc[(data_df['tweet-type'] == metric) &
                         #                (data_df['delta'] <= time)]) * (60 / time)
 
@@ -600,7 +600,7 @@ def tweet_diffusion_calc(tweet_df, data_folder, diff_folder):
                 for metric in diff_metrics:
                     for time in rate_times:
                         tweet_df.loc[filename[:18], 'diffusion-' + metric + '_count_' + str(time) + 'm'] = 0
-                        #tweet_df.loc[filename[:18], 'diffusion-' + metric + '_rate_' + str(time) + 'm'] = 0
+                        # tweet_df.loc[filename[:18], 'diffusion-' + metric + '_rate_' + str(time) + 'm'] = 0
 
         else:
             print('filename not matched')
@@ -608,7 +608,7 @@ def tweet_diffusion_calc(tweet_df, data_folder, diff_folder):
             for metric in diff_metrics:
                 for time in rate_times:
                     tweet_df.loc[filename[:18], 'diffusion-' + metric + '_count_' + str(time) + 'm'] = np.nan
-                    #tweet_df.loc[filename[:18], 'diffusion-' + metric + '_rate_' + str(time) + 'm'] = np.nan
+                    # tweet_df.loc[filename[:18], 'diffusion-' + metric + '_rate_' + str(time) + 'm'] = np.nan
 
         n += 1
         print(str(n) + '/' + str(len(os.listdir(data_folder + '\\' + diff_folder))))
@@ -631,16 +631,16 @@ def tweet_diffusion_calc(tweet_df, data_folder, diff_folder):
     for time in rate_times:
         tweet_df['diffusion-combined_rt_qt_count_' + str(time) + 'm'] = tweet_df['diffusion-rt_count_' + str(
             time) + 'm'] + tweet_df['diffusion-qt_count_' + str(time) + 'm']
-        #tweet_df['diffusion-combined_rt_qt_rate_' + str(time) + 'm'] = tweet_df['diffusion-rt_rate_' + str(
+        # tweet_df['diffusion-combined_rt_qt_rate_' + str(time) + 'm'] = tweet_df['diffusion-rt_rate_' + str(
         #    time) + 'm'] + tweet_df['diffusion-qt_rate_' + str(time) + 'm']
 
     # Reset the index
     tweet_df = tweet_df.reset_index()
-    #tweet_df.set_index('tweet-id', inplace=True)
+    # tweet_df.set_index('tweet-id', inplace=True)
 
     # Save the dataframe as a CSV and JSON file, using user-provided name.
-    #tweet_df.to_csv(data_folder + '\\' + tweet_df_name + '.csv')
-    #tweet_df.to_json(data_folder + '\\' + tweet_df_name + '.json')
+    # tweet_df.to_csv(data_folder + '\\' + tweet_df_name + '.csv')
+    # tweet_df.to_json(data_folder + '\\' + tweet_df_name + '.json')
 
     return tweet_df
 
@@ -868,6 +868,7 @@ def descr_stats(df, columns, values, labels, user_field, metrics):
         columns: A list of column(s) in the Twitter dataframe where grouping data is stored
         values: A list of value(s) that the grouping data can take
         labels: A list of label(s) for the groupings
+        user_field: Column that stores user data (e.g. user.username)
         metrics: A list of diffusion metric(s) to compute descriptive statistics for
 
     Notes:
@@ -1022,22 +1023,27 @@ def mannwhitneyu_test(df, by, how, metric):
 
     # Format the dataframe for display.
 
-
     # Return the p-value dataframe to the user.
     return pval_df
 
 
-def cat_midpoint(df, cat_col, weight_col, show=False):
+def cat_midpoint(df, cat_cols, cat_vals, cat_names, date_col, weight_col, show=False):
     """
     Calculates the midpoint and diffusion-weighted midpoint (time) for each unique value in a tweet categorization
     scheme. Returns a sorted (by diffusion-weighted midpoint) list of unique categorizations.
 
     Parameters:
         df: A tweet dataframe with coded categorizations and diffusion data (Pandas dataframe)
-        cat_col: Name of column where categorized data is stored (string)
-        weight_col: Name of column where data that midpoint should be weighted by is stored (string)
+        cat_cols: Name of column(s) where categorized data is stored (string)
+        cat_vals: Values to look for in the columns provided above
+        cat_names: Display names for categories
+        date_col: Name of column where date & time data is stored
+        weight_col: Name of column where data that midpoint should be weighted by is stored (e.g. retweet_count)
         show: Whether or not to display the midpoints and weighted midpoint for each unique value, sorted from earliest
                   weighted midpoint to latest (Boolean, default False)
+
+    Returns:
+        A list of column names or values and a list of display names/labels
     """
 
     # Initialize mean and weighted mean variables
@@ -1045,32 +1051,36 @@ def cat_midpoint(df, cat_col, weight_col, show=False):
     mean_weighted = []
 
     # For each unique value in the categorization column...
-    for item in df[cat_col].drop_duplicates().tolist():
+    for col in cat_cols:
+        for val in cat_vals:
+            # Select only tweets coded as the unique value
+            item_df = df.loc[df[col] == val]
 
-        # Select only tweets coded as the unique value
-        item_df = df.loc[df[cat_col] == item]
+            # Calculate the mean/midpoint of the selected tweets
+            item_df[date_col] = item_df[date_col].astype(np.int64)
+            item_mean = pd.to_datetime(item_df[date_col].mean())
+            mean.append(item_mean)
 
-        # Calculate the mean/midpoint of the selected tweets
-        item_df['tweet-created_at'] = item_df['tweet-created_at'].astype(np.int64)
-        item_mean = pd.to_datetime(item_df['tweet-created_at'].mean())
-        mean.append(item_mean)
+            # Calculate the diffusion-weighted mean/midpoint of the selected tweets
+            item_df['weighted'] = item_df[date_col] * (item_df[weight_col] / item_df[weight_col].sum())
+            item_weighted = pd.to_datetime(item_df['weighted'].sum())
+            mean_weighted.append(item_weighted)
 
-        # Calculate the diffusion-weighted mean/midpoint of the selected tweets
-        item_df['weighted'] = item_df['tweet-created_at'] * (item_df[weight_col] / item_df[weight_col].sum())
-        item_weighted = pd.to_datetime(item_df['weighted'].sum())
-        mean_weighted.append(item_weighted)
+    # Build a dataframe with the mean and weighted mean for each category (where the 'value' is determined based on
+    #     whether the user inputs more columns or values)
+    if len(cat_cols) > len(cat_vals):
+        mp_df = pd.DataFrame({'value': cat_cols, 'name': cat_names, 'mean': mean, 'mean_weighted': mean_weighted})
+    else:
+        mp_df = pd.DataFrame({'value': cat_vals, 'name': cat_names, 'mean': mean, 'mean_weighted': mean_weighted})
 
-    # Combine unique values, midpoint, and weighted midpoint in to a dataframe and sort by diffusion-weighted mean
-    mp_df = pd.DataFrame({cat_col: df[cat_col].drop_duplicates().tolist(), 'mean': mean,
-                          'mean_weighted': mean_weighted})
     mp_df['diff'] = mp_df['mean_weighted'] - mp_df['mean']
-    mp_df.sort_values('mean_weighted', inplace=True)
+    mp_df.sort_values('mean_weighted', ascending=False, inplace=True)
 
     # Show, if desired
     if show is True:
         print(mp_df)
 
-    return mp_df[cat_col].tolist()
+    return mp_df['value'].tolist(), mp_df['name'].tolist()
 
 
 # Other tables
@@ -1297,7 +1307,7 @@ def sankey(df, filters, user_col, labels=True, show=True):
 
     # Initialize filtering data
     df_filter = df.copy()
-    #filters = ['time', 'source', 'risk', 'relevant', 'forecast']
+    # filters = ['time', 'source', 'risk', 'relevant', 'forecast']
     f_tweet = []
     f_source = []
 
@@ -1409,7 +1419,8 @@ def scatter_size(df, diff_fields, id_field, title, show=True):
     plt.close()
 
 
-def timeseries_ww_wwexp_nonww(df, freq, column, values, id_field, date_field, diff_field, colors, dates, median, show=True, save=False):
+def timeseries_ww_wwexp_nonww(df, freq, column, values, id_field, date_field, diff_field, colors, dates, median,
+                              show=True, save=False):
     """
     Plots tweet counts and total/median RTs/replies for experimental watch/warning, non-experimental watch/warning, and
     non-watch/warning tweets over time
@@ -1434,8 +1445,14 @@ def timeseries_ww_wwexp_nonww(df, freq, column, values, id_field, date_field, di
     freq_str = str(freq) + 'Min'
     freq_title = str('{:0.0f}'.format(freq / 60)) + 'h'
 
+    if median is True:
+        med_title = 'median'
+    else:
+        med_title = 'sum'
+
     counts, sum_diff, values_drop, colors_drop = ([] for i in range(4))
-    t_index = pd.DatetimeIndex(pd.date_range(start='2017-08-30 00:00:00', end='2017-09-12 21:00:00', freq=freq_str, tz='UTC'))
+    t_index = pd.DatetimeIndex(pd.date_range(start='2017-08-29 18:00:00', end='2017-09-12 18:00:00', freq=freq_str,
+                                             tz='US/Eastern'))
     for value, color in zip(values, colors):
         df_value = df.loc[df[column] == value]
 
@@ -1457,16 +1474,16 @@ def timeseries_ww_wwexp_nonww(df, freq, column, values, id_field, date_field, di
     fig, (ax0, ax1) = plt.subplots(2, 1, figsize=(11, 8.5))
     w = freq / 1800
     lw = 3
-    a = 0.5
+    a = 1
     fs = 14
     lp = 10
     ls = 12
 
     # Timing variables.
-    td = timedelta(hours=0) # hours=-5 to shift to Central time
-    td_bar = timedelta(hours=(freq / 120)) # (freq / 120) -5 to shift to Central time
-    start_plot = min(dates) + td
-    end_plot = max(dates) + td
+    td = timedelta(hours=-4)  # hours=-5 to shift to Central time
+    td_bar = timedelta(hours=(freq / 120) - 4)  # (freq / 120) -5 to shift to Central time
+    start_plot = min(dates) - timedelta(hours=6)
+    end_plot = max(dates) + timedelta(hours=3)
 
     bottom = 0
     for i, (key, value) in enumerate(count_dict.items()):
@@ -1475,87 +1492,56 @@ def timeseries_ww_wwexp_nonww(df, freq, column, values, id_field, date_field, di
 
     for i, (key, value) in enumerate(sum_diff_dict.items()):
         ax1.plot(value.index + td_bar, value, color=colors_keep[i], alpha=a, linewidth=lw, label=key)
-    #ax0.bar(count_nonww.index + td_bar, count_nonww, width=w, color='blue', alpha=a, label='Non-W/W')
-    #ax0.bar(count_ww.index + td_bar, count_ww, width=w, color='orange', alpha=a, label='W/W (Non-Exp)',
-    #        bottom=count_nonww)
-    #ax0.bar(count_ww_exp.index + td_bar, count_ww_exp, width=w, color='green', alpha=a, label='W/W (Exp)',
-    #        bottom=np.array(count_nonww) + np.array(count_ww))
-
-
-
-
-
-
-
-    # Slice the tweet dataframe into three seperate dataframes which include only watch/warning (non-exp),
-    # watch/warning (exp), and non-watch/warning images respectively.
-    #images = df['image-type'].drop_duplicates().tolist()
-    #images_nonww = [image for image in images if (image != 'Watch/Warning') & (image != 'Watch/Warning (Exp)')]
-    #df_nonww = tweet_filter(df, image_range=images_nonww)
-    #df_ww = tweet_filter(df, image_range=['Watch/Warning'])
-    #df_ww_exp = tweet_filter(df, image_range=['Watch/Warning (Exp)'])
-
-    # Calculate the tweet count for each sliced dataframe for each time bin, where the length of the bin is provided by
-    # the user.
-    #count_nonww = df_nonww.groupby(pd.Grouper(freq=freq_str)).count()['diffusion-rt_count']
-    #count_ww = df_ww.groupby(pd.Grouper(freq=freq_str)).count()['diffusion-rt_count'].\
-    #    reindex(count_nonww.index).fillna(0)
-    #count_ww_exp = df_ww_exp.groupby(pd.Grouper(freq=freq_str)).count()['diffusion-rt_count'].\
-    #    reindex(count_nonww.index).fillna(0)
-
-    # Calculate the total retweets for each sliced dataframe for each time bin.
-    #sum_rt_nonww = df_nonww.groupby(pd.Grouper(freq=freq_str)).sum()['diffusion-rt_count']
-    #sum_rt_ww = df_ww.groupby(pd.Grouper(freq=freq_str)).sum()['diffusion-rt_count']
-    #sum_rt_ww_exp = df_ww_exp.groupby(pd.Grouper(freq=freq_str)).sum()['diffusion-rt_count']
 
     # Calculate the total replies for each sliced dataframe for each time bin.
-    #sum_reply_nonww = df_nonww.groupby(pd.Grouper(freq=freq_str)).sum()['diffusion-reply_count']
-    #sum_reply_ww = df_ww.groupby(pd.Grouper(freq=freq_str)).sum()['diffusion-reply_count']
-    #sum_reply_ww_exp = df_ww_exp.groupby(pd.Grouper(freq=freq_str)).sum()['diffusion-reply_count']
+    # sum_reply_nonww = df_nonww.groupby(pd.Grouper(freq=freq_str)).sum()['diffusion-reply_count']
+    # sum_reply_ww = df_ww.groupby(pd.Grouper(freq=freq_str)).sum()['diffusion-reply_count']
+    # sum_reply_ww_exp = df_ww_exp.groupby(pd.Grouper(freq=freq_str)).sum()['diffusion-reply_count']
 
     # Create a figure and axes, then twin the axes so there are two y-axes.
 
-    #ax4 = ax1.twinx()
-    #ax5 = ax2.twinx()
-    #ax6 = ax3.twinx()
-    #axes = [ax0, ax1]
+    # ax4 = ax1.twinx()
+    # ax5 = ax2.twinx()
+    # ax6 = ax3.twinx()
+    # axes = [ax0, ax1]
 
     # For each y-axis, share the bounds so that each subplot plots over the same y-values.
-    #ax1.get_shared_y_axes().join(ax1, ax2, ax3)
+    # ax1.get_shared_y_axes().join(ax1, ax2, ax3)
 
     # Create a figure and set plotting variables.
-    #w = freq / 1800
-    #lw = 3
-    #a = 0.5
-    #fs = 14
-    #lp = 10
-    #ls = 12
+    # w = freq / 1800
+    # lw = 3
+    # a = 0.5
+    # fs = 14
+    # lp = 10
+    # ls = 12
 
     # Timing variables.
-    #td = timedelta(hours=-5)
-    #td_bar = timedelta(hours=(freq / 120 - 5))
-    #start = min(dates) + td
-    #end = max(dates) + td
+    # td = timedelta(hours=-5)
+    # td_bar = timedelta(hours=(freq / 120 - 5))
+    # start = min(dates) + td
+    # end = max(dates) + td
 
     # Plot the non-watch/warning, watch/warning (non-exp), and watch/warning (exp) counts over time as a stacked bar
     # chart. Apply an offset to the x-axis (time) to ensure the bars line up properly.
-    #ax0.bar(count_nonww.index + td_bar, count_nonww, width=w, color='blue', alpha=a, label='Non-W/W')
-    #ax0.bar(count_ww.index + td_bar, count_ww, width=w, color='orange', alpha=a, label='W/W (Non-Exp)', bottom=count_nonww)
-    #ax0.bar(count_ww_exp.index + td_bar, count_ww_exp, width=w, color='green', alpha=a, label='W/W (Exp)',
+    # ax0.bar(count_nonww.index + td_bar, count_nonww, width=w, color='blue', alpha=a, label='Non-W/W')
+    # ax0.bar(count_ww.index + td_bar, count_ww, width=w, color='orange', alpha=a, label='W/W (Non-Exp)',
+    #         bottom=count_nonww)
+    # ax0.bar(count_ww_exp.index + td_bar, count_ww_exp, width=w, color='green', alpha=a, label='W/W (Exp)',
     #        bottom=np.array(count_nonww) + np.array(count_ww))
 
     # noinspection PyUnresolvedReferences
-    #pd.plotting.register_matplotlib_converters()
+    # pd.plotting.register_matplotlib_converters()
 
     # Line plots for total retweets.
-    #ax1.plot(sum_rt_nonww.index + td_bar, sum_rt_nonww, color='blue', alpha=a, linewidth=lw, label='Non-W/W')
-    #ax1.plot(sum_rt_ww.index + td_bar, sum_rt_ww, color='orange', alpha=a, linewidth=lw, label='W/W (Non-Exp)')
-    #ax1.plot(sum_rt_ww_exp.index + td_bar, sum_rt_ww_exp, color='green', alpha=a, linewidth=lw, label='W/W (Exp)')
+    # ax1.plot(sum_rt_nonww.index + td_bar, sum_rt_nonww, color='blue', alpha=a, linewidth=lw, label='Non-W/W')
+    # ax1.plot(sum_rt_ww.index + td_bar, sum_rt_ww, color='orange', alpha=a, linewidth=lw, label='W/W (Non-Exp)')
+    # ax1.plot(sum_rt_ww_exp.index + td_bar, sum_rt_ww_exp, color='green', alpha=a, linewidth=lw, label='W/W (Exp)')
 
     # Line plots for total replies.
-    #ax1.plot(sum_reply_ww_exp.index + td, sum_reply_ww_exp, color='maroon', linewidth=lw, label='Total Reply')
-    #ax2.plot(sum_reply_ww.index + td, sum_reply_ww, color='maroon', linewidth=lw, label='Total Reply')
-    #ax3.plot(sum_reply_nonww.index + td, sum_reply_nonww, color='maroon', linewidth=lw, label='Total Reply')
+    # ax1.plot(sum_reply_ww_exp.index + td, sum_reply_ww_exp, color='maroon', linewidth=lw, label='Total Reply')
+    # ax2.plot(sum_reply_ww.index + td, sum_reply_ww, color='maroon', linewidth=lw, label='Total Reply')
+    # ax3.plot(sum_reply_nonww.index + td, sum_reply_nonww, color='maroon', linewidth=lw, label='Total Reply')
 
     # Format major axes and labels.
     for ax in [ax0, ax1]:
@@ -1568,30 +1554,30 @@ def timeseries_ww_wwexp_nonww(df, freq, column, values, id_field, date_field, di
         ax.legend(loc='upper left', fontsize=ls)
     ax0.set_ylabel('Tweet Count', fontsize=fs, labelpad=lp)
 
-    if median is True:
-        # Calculate the median retweets for each sliced dataframe for each time bin.
-        med_rt_nonww = df_nonww.groupby(pd.Grouper(freq=freq_str)).median()['diffusion-rt_count']
-        med_rt_ww = df_ww.groupby(pd.Grouper(freq=freq_str)).median()['diffusion-rt_count']
-        med_rt_ww_exp = df_ww_exp.groupby(pd.Grouper(freq=freq_str)).median()['diffusion-rt_count']
+    # if median is True:
+    #     # Calculate the median retweets for each sliced dataframe for each time bin.
+    #     med_rt_nonww = df_nonww.groupby(pd.Grouper(freq=freq_str)).median()['diffusion-rt_count']
+    #     med_rt_ww = df_ww.groupby(pd.Grouper(freq=freq_str)).median()['diffusion-rt_count']
+    #     med_rt_ww_exp = df_ww_exp.groupby(pd.Grouper(freq=freq_str)).median()['diffusion-rt_count']
+    #
+    #     # Twin the axes to show median diffusion on secondary y-axis.
+    #     axes_twin = [ax4, ax5, ax6]
+    #
+    #     # Share secondary y-axis bounds so that each subplot plots over the same y-values.
+    #     ax6.get_shared_y_axes().join(ax4, ax5, ax6)
+    #
+    #     # Scatter plots for median retweet information.
+    #     ax4.scatter(med_rt_ww_exp.index + td, med_rt_ww_exp, marker='o', facecolor='white', color='green',
+    #                 label='Median RT')
+    #     ax5.scatter(med_rt_ww.index + td, med_rt_ww, marker='o', facecolor='white', color='orange', label='Median RT')
+    #     ax6.scatter(med_rt_nonww.index + td, med_rt_nonww, marker='o', facecolor='white', color='blue',
+    #                 label='Median RT')
 
-        # Twin the axes to show median diffusion on secondary y-axis.
-        axes_twin = [ax4, ax5, ax6]
-
-        # Share secondary y-axis bounds so that each subplot plots over the same y-values.
-        ax6.get_shared_y_axes().join(ax4, ax5, ax6)
-
-        # Scatter plots for median retweet information.
-        ax4.scatter(med_rt_ww_exp.index + td, med_rt_ww_exp, marker='o', facecolor='white', color='green',
-                    label='Median RT')
-        ax5.scatter(med_rt_ww.index + td, med_rt_ww, marker='o', facecolor='white', color='orange', label='Median RT')
-        ax6.scatter(med_rt_nonww.index + td, med_rt_nonww, marker='o', facecolor='white', color='blue',
-                    label='Median RT')
-
-        # Format secondary axes and labels.
-        for ax in axes_twin:
-            ax.tick_params(axis='y', labelsize=ls)
-            ax.set_ylabel('Median RT', fontsize=fs, labelpad=lp)
-            ax.legend(loc='upper right', fontsize=ls)
+    # # Format secondary axes and labels.
+        # for ax in axes_twin:
+        #     ax.tick_params(axis='y', labelsize=ls)
+        #     ax.set_ylabel('Median RT', fontsize=fs, labelpad=lp)
+        #     ax.legend(loc='upper right', fontsize=ls)
 
     # Add light gray lines at times of significance.
     date_plot = [x for x in dates if x != max(dates) and x != min(dates)]
@@ -1610,7 +1596,7 @@ def timeseries_ww_wwexp_nonww(df, freq, column, values, id_field, date_field, di
 
     # Save figure, if desired.
     if save is True:
-        fig.savefig('timeseries_' + freq_title + '.png', dpi=300)
+        fig.savefig('timeseries_' + freq_title + '_' + column + '_' + med_title + '.png', dpi=300)
 
 
 def rate_plot(df, gb, metric, title, show=True):
@@ -1725,7 +1711,8 @@ def rate_plot(df, gb, metric, title, show=True):
         plt.close()
 
 
-def timeline(df, value_cols, values, labels, size_col, color_col, dates, datetime_col, zeros=True, show=True, save=False):
+def timeline(df, value_cols, values, labels, size_col, color_col, color_vals, clabel_dict, palette, dates, datetime_col,
+             ctitle, zeros=True, time_order=True, show=True, save=False, ):
     """
     Plots each tweet as a circle on a timeline, segregated for a set of tweet groupings, colored by a relevant variable,
     and sized by diffusion
@@ -1738,24 +1725,34 @@ def timeline(df, value_cols, values, labels, size_col, color_col, dates, datetim
         size_col: A string name of a column in the Twitter dataframe where diffusion data is stored
         color_col: A string name of a column in the Twitter dataframe to be used to determine the color of the tweet in
                        the plot
+        color_vals: A list of string values to look for in the color column
+        clabel_dict: A dictionary mapping descriptive color value labels to the values that appear in the color column
+        palette: A dictionary mapping the values that appear in the color column to the color they should be displayed
+                     as in the plot
         dates: A list of timezone-aware datetime objects that include the start of the plot and the end of the plot
         datetime_col: String name of column where tweet date/time are stored
+        ctitle: A short descriptive name for the color categorization
         zeros: Whether to show tweets with zero retweets on the plot (Boolean; default True)
+        time_order: Whether to display y-axis categories ordered by mean time when tweets in the category are posted
+                        (Boolean; default True)
         show: Whether to display the image (Boolean; default True)
         save: Whether to save the image (Boolean; default False)
 
     Notes:
-         Color_col must be a binary column.
          The function plots from the bottom up. Therefore, the values should be input in reverse order of how the user
-         would like them to read top-down.
+             would like them to read top-down.
          Dates can include other dates beside start and end of the plot, but they will not be plotted.
     """
 
     # Create a figure and set orientation based on the number of categories.
-    if len(values) > 10:
+    if (len(values) > 10) | (len(value_cols) > 10):
         fig, ax = plt.subplots(figsize=(8.5, 11))
+        leg_cols = 1
+        leg_bboxX = 0.8
     else:
         fig, ax = plt.subplots(figsize=(11, 8.5))
+        leg_cols = 2
+        leg_bboxX = 0.75
 
     # Set plotting variables
     ec = 'black'
@@ -1765,68 +1762,30 @@ def timeline(df, value_cols, values, labels, size_col, color_col, dates, datetim
     ls = 12
     y = 1
     yticks = []
+    legend_elements1 = []
 
     # Set differential plotting variables for specific plot formats (e.g. plotting dates as the y-axis and time as the
     # x-axis).
     if value_cols == ['date']:
         strform = '%I %p'
         time_delta = timedelta(hours=6)
-        leg_cols = 1
-        leg_bboxX = 0.8
+        time_delta_minor = timedelta(hours=1)
     else:
         strform = '%b-%d'
         time_delta = timedelta(days=1)
-        leg_cols = 2
-        leg_bboxX = 0.75
+        time_delta_minor = timedelta(hours=6)
 
     # Timing variables.
     start = min(dates)
     end = max(dates)
 
-    # Set color, labels, and titles based off user-provided color column. If the user-provided column does not match
-    # the existing options, allow them to input which values they'd like.
-    if color_col == 'image-branding_off':
-        c1 = '#603F83'
-        d1 = 'NWS Branded'
-        c2 = '#E9738D'
-        d2 = 'Non-NWS Branded'
-        title = 'branding'
+    # Obtain labels and colors for color values.
+    clabels = [clabel_dict[n] for n in color_vals]
+    colors = [palette[m] for m in color_vals]
 
-    elif color_col == 'image-type_multi':
-        c1 = 'blue'
-        d1 = 'Overlap'
-        c2 = 'white'
-        d2 = 'No Overlap'
-        title = 'multi'
-
-    elif color_col == 'user-scope_loc':
-        c1 = '#2CAE66'
-        d1 = 'Local'
-        c2 = '#FFA177'
-        d2 = 'National'
-        title = 'scope'
-
-    elif color_col == 'user-agency_ind':
-        c1 = '#FC766A'
-        d1 = 'Individual'
-        c2 = '#5B84B1'
-        d2 = 'Organization'
-        title = 'agency'
-
-    elif color_col == 'bot_tweet':
-        c1 = 'lightskyblue'
-        d1 = 'Non-bot'
-        c2 = 'white'
-        d2 = 'Bot'
-        title = 'bot'
-
-    else:
-        print('Your selected color column: ' + color_col)
-        c1 = input('Please provide a color to represent the first value.')
-        d1 = input('Please provide a label to represent the first value.')
-        c2 = input('Please provide a color to represent the second value.')
-        d2 = input('Please provide a label to represent the second value.')
-        title = input('Please provide a shorthand for the color column to be used in the image title.')
+    # Old Harvey color mappings:
+    #     user-scope_loc: {'Local': '#2CAE66, 'National': '#FFa177'}, title='scope'
+    #     user-agency_ind: {'Individual': '#fc766a', 'Organization': '#5b84b1'}, title='agency'
 
     # Set size title based on size column. If the user-provided size column does not match the options given, allow them
     # to choose the title based on their chosen column.
@@ -1844,50 +1803,76 @@ def timeline(df, value_cols, values, labels, size_col, color_col, dates, datetim
     else:
         add = 0
 
-    # Loop over each unique value in the user-provided value column.
+    # Determine the order to plot the category values in
+    if time_order is True:
+        if len(values) > len(value_cols):
+            values, labels = cat_midpoint(df=df,
+                                          cat_cols=value_cols,
+                                          cat_vals=values,
+                                          cat_names=labels,
+                                          date_col=datetime_col,
+                                          weight_col=size_col)
+        else:
+            value_cols, labels = cat_midpoint(df=df,
+                                              cat_cols=value_cols,
+                                              cat_vals=values,
+                                              cat_names=labels,
+                                              date_col=datetime_col,
+                                              weight_col=size_col)
+
+    # Loop over each unique value in the user-provided value and color columns.
     for col in value_cols:
         for value in values:
-            # Split the dataframe in to two based on the value of the color column.
-            tweets_c1 = df.loc[(df[col] == value) & (df[color_col] != 1)]
-            tweets_c2 = df.loc[(df[col] == value) & (df[color_col] == 1)]
+            y_add = 0
+            tweets, times = ([] for i in range(2))
+            for i, color_val in enumerate(color_vals):
+                # Split the dataframe based on the color column value
+                tweets_c = df.loc[(df[col] == value) & (df[color_col] == color_val)]
 
-            # Add a value to the size column depending on whether the user chooses to visualize zeros or not (the add
-            # value is 1 if zeros are included and 0 if not).
-            tweets_c1[size_col] = tweets_c1[size_col] + add
-            tweets_c2[size_col] = tweets_c2[size_col] + add
+                # Add a value to the size column depending on whether the user chooses to visualize zeros or not (the
+                # add value is 1 if zeros are included and 0 if not).
+                tweets_c[size_col] = tweets_c[size_col] + add
 
-            # Obtain the sorted dates for each split dataframe.
-            tweets_c1.sort_values(by=datetime_col, inplace=True)
-            times_c1 = tweets_c1[datetime_col]
-            tweets_c2.sort_values(by=datetime_col, inplace=True)
-            times_c2 = tweets_c2[datetime_col]
+                # Obtain the sorted dates for each split dataframe.
+                tweets_c.sort_values(by=datetime_col, inplace=True)
+                times_c = tweets_c[datetime_col]
 
-            # Add space before and after each row in relation to the size of the largest "bubble" in each row
-            if (tweets_c1[size_col].max() >= tweets_c2[size_col].max()) | (len(tweets_c2) == 0):
-                y_add = tweets_c1[size_col].max()**0.5
-            else:
-                y_add = tweets_c2[size_col].max()**0.5
+                # Add space before and after each row in relation to the size of the largest "bubble" in each row.
+                if tweets_c[size_col].max()**0.5 > y_add:
+                    y_add = tweets_c[size_col].max()**0.5
 
+                # Add tweets and times datasets for each value & color to a list to loop through later when actually
+                # plotting
+                tweets.append(tweets_c)
+                times.append(times_c)
+
+            # Increment the y-value before plotting.
             y += y_add
 
-            # Plot the split dataframes at the same y-value (all in one line), where the x-value is the time the tweet
-            # was posted. Size the circles by the user-provided size column. Vary the split dataframes by color.
-            ax.scatter(times_c1, [y] * len(times_c1), alpha=a,
-                       s=tweets_c1[size_col], edgecolor=ec, linewidth=lw, c=c1)
-            ax.scatter(times_c2, [y] * len(times_c2), alpha=a,
-                       s=tweets_c2[size_col], edgecolor=ec, linewidth=lw, c=c2)
+            # Plot the split dataframes at the same y-value (all in one line), where the x-value is the time the
+            # tweet was posted. Size the circles by the user-provided size column. Vary the split dataframes by
+            # color.
+            for i in range(0, len(color_vals)):
+                ax.scatter(times[i], [y] * len(times[i]), alpha=a,
+                           s=tweets[i][size_col], edgecolor=ec, linewidth=lw, c=colors[i])
 
             # Append the y-value to the yticks array.
             yticks.append(y)
 
-            # Increment y by ydelta before moving on to the next value.
+            # Increment y by ydelta again before moving on to the next value.
             y += y_add
+
+    # Set secondary vertical lines (with no xtick/label)
+    while start <= end:
+        plt.axvline(start, c='lightgray', alpha=0.25)
+        start += time_delta_minor
 
     # Set xticks and xticklabels by hand so they correspond to local time (UTC -5). Draw a vertical line at midnight
     # local time for each day in the time range.
     xticks = []
     xticklabels = []
-    #ax.set_xlim(start, end)
+    start = min(dates)
+    ax.set_xlim(start, end)
     while start <= end:
         xticks.append(start)
         xticklabels.append(start.strftime(strform))
@@ -1901,8 +1886,7 @@ def timeline(df, value_cols, values, labels, size_col, color_col, dates, datetim
     ax.set_yticks(yticks)
     ax.set_yticklabels(labels)
     ax.tick_params(axis='y', labelsize=fs, length=0)
-    ymin, ymax = ax.get_ylim()
-    ax.set_ylim(ymin, y)
+    ax.set_ylim(0, y*1.02)
 
     # Remove borders on right, left, and top of image.
     ax.spines['right'].set_visible(False)
@@ -1910,8 +1894,10 @@ def timeline(df, value_cols, values, labels, size_col, color_col, dates, datetim
     ax.spines['top'].set_visible(False)
 
     # Manually set legend for color values.
-    legend_elements1 = [Patch(facecolor=c1, edgecolor='black', label=d1),
-                        Patch(facecolor=c2, edgecolor='black', label=d2)]
+    for i, color in enumerate(color_vals):
+        legend_elements1.append(Patch(facecolor=colors[i], edgecolor='black', label=clabels[i]))
+    # legend_elements1 = [Patch(facecolor=c1, edgecolor='black', label=d1),
+    #                     Patch(facecolor=c2, edgecolor='black', label=d2)]
     fig.legend(handles=legend_elements1, loc='lower center', bbox_to_anchor=[leg_bboxX, 0.05], ncol=leg_cols,
                fontsize=ls)
 
@@ -1930,7 +1916,8 @@ def timeline(df, value_cols, values, labels, size_col, color_col, dates, datetim
 
     # Save figure, if desired.
     if save is True:
-        fig.savefig('timeline_' + value_cols[0] + '_' + title + '_' + size_title + '.png', dpi=300, bbox_inches='tight')
+        fig.savefig('timeline_' + value_cols[0] + '_' + ctitle + '_' + size_title + '.png', dpi=300,
+                    bbox_inches='tight')
 
     # Show figure, if desired.
     if show is True:

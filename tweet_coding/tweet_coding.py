@@ -124,7 +124,7 @@ def filter_coding(cfile, dfile, direc, ctype, codecols, datecols):
         display_progress(tweetdata, codecols, ctype, ['yes', 'no', 'Not Available'])
 
 
-def image_coding(cfile, dfile, direc, ctype, datecol):
+def harvey_image_coding(cfile, dfile, direc, ctype, datecol):
     """
      Code tweets based on their image content
 
@@ -303,6 +303,72 @@ def hazard_risk_coding(cfile, dfile, direc, ctype, datecols, url_col):
                     to_code['risk_mult'].iloc[i] = ['y']
                 else:
                     to_code['risk_mult'].iloc[i] = ['n']
+
+        # Map various inputs to either 'yes', 'no', or 'Not Available' (for tweets that don't display in browswer
+        # because they were deleted).
+        to_code = map_input(to_code, all_cols, all_in, all_out)
+
+        # Save the updated coded file after each tweet is coded.
+        tweetdata = save_coding(coded, to_code, cfile, direc, datecols)
+
+        # Display coding progress.
+        display_progress(tweetdata, all_cols, ctype, ['yes'])
+
+
+def irma_image_coding(cfile, dfile, direc, ctype, datecols, url_col):
+    """
+     Code tweets based on their image content
+
+     Parameters:
+        cfile: A text string denoting what the coded data should be saved as
+        dfile: A text string denoting the existing data that should be coded
+        direc: A text string denoting the directory that the existing data and newly coded data should be saved in
+        ctype: A text string denoting the type of coding being done (e.g. 'Risk image', 'Relevance and forecast').
+                   First letter should be capitalized.
+        datecols: A list of column(s) to sort the data by (e.g. date, username, etc.)
+        url_col: A text string denoting the column name of the tweet URL field
+     """
+    # Define names for each image code.
+    brands = ['nws', 'non_nws', 'no_branding']
+    images = ['two', 'cone', 'arrival', 'prob', 'spag', 'wind', 'surge', 'info', 'ww', 'ti', 'conv', 'rain', 'sat',
+              'radar', 'adv', 'env', 'text', 'model', 'orisk', 'onon']
+
+    # Convert names to column names by adding prefixes
+    brand_cols = ['image_brand.' + col for col in brands]
+    image_cols = ['image_type.' + col for col in images]
+    all_cols = brand_cols + image_cols
+
+    # Read and parse Twitter data
+    coded, to_code = readdata(cfile, dfile, direc, ctype, all_cols, datecols)
+
+    # For each tweet yet to be coded...
+    for i in range(0, len(to_code)):
+
+        # Display the tweet in an incognito Chrome tab
+        display_tweet(to_code[url_col].iloc[i])
+
+        # Code the tweets for image branding
+        nan_in = ['0', 'na', 'nan', 'none', '', 'Not Available']
+        all_brand_in = brands + nan_in
+        brand_in = code_tweet('Which brand(s) are represented in the image/media of this tweet?', all_brand_in)
+
+        # Code the tweets for image type
+        all_image_in = images + nan_in
+        image_in = code_tweet('Which image type(s) are represented in this tweet?', all_image_in)
+
+        # Add image branding codes to dataframe from input
+        for brand in brands:
+            if brand in brand_in:
+                to_code['image_brand.' + brand].iloc[i] = ['y']
+            else:
+                to_code['image_brand.' + brand].iloc[i] = ['n']
+
+        # Add image type codes to dataframe from input
+        for image in images:
+            if image in image_in:
+                to_code['image_type.' + image].iloc[i] = ['y']
+            else:
+                to_code['image_type.' + image].iloc[i] = ['n']
 
         # Map various inputs to either 'yes', 'no', or 'Not Available' (for tweets that don't display in browswer
         # because they were deleted).

@@ -1,19 +1,27 @@
 import pandas as pd
-from tweet_coding.tweet_coding import filter_coding, hazard_risk_coding
+from tweet_coding.tweet_coding import filter_coding, hazard_risk_coding, irma_image_coding
 pd.options.mode.chained_assignment = None
 
 # Read in file and folder where coded data is stored.
-f = 'irma_rel_to_code.csv'
-fcoded = 'irma_rel_coded.csv'
-d = 'Irma\\Data\\Content Coding - Phase 1'
+f = 'irma_ic_tocode.csv'
+fcoded = 'irma_ic_coded.csv'
+d = 'Irma\\Data\\Image Coding'
 datecols = ['created_at']
 
-hazard_risk_coding(cfile=fcoded,
+irma_image_coding(cfile=fcoded,
                    dfile=f,
                    direc=d,
-                   ctype='Hazard and risk information',
+                   ctype='Image coding',
                    datecols=datecols,
                    url_col='tweet-url')
+
+
+# hazard_risk_coding(cfile=fcoded,
+#                    dfile=f,
+#                    direc=d,
+#                    ctype='Hazard and risk information',
+#                    datecols=datecols,
+#                    url_col='tweet-url')
 
 #filter_coding(cfile=fcoded,
 #                dfile=f,

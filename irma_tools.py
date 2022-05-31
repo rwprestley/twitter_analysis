@@ -6,9 +6,9 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 
 
-def google_coded_format(fileloc, to_rename, renamed, header):
+def coded_format(fileloc, to_rename, renamed, header):
     """
-    Format tweet spreadsheets created in Google Sheets to code tweet data
+    Format tweet spreadsheets created to code tweet data
 
     Parameters:
         fileloc: File name/location in directory (string)
@@ -123,13 +123,62 @@ def haz_risk_format(df):
     return df
 
 
-def merge_coding(filter_dfs, haz_risk_dfs, raw_df):
+def image_format(df):
+    """
+    Create multiple, joined, and mutually exclusive image columns from coded data
+
+    Parameters:
+        df: A Pandas dataframe of Twitter data
+
+    Returns:
+        The same dataframe as entered, with updates to image columns as described above
+
+    Outputs:
+        None
+    """
+    # Convert coded image columns from "yes" and "no to 1s and 0s
+    brand_names = ['image_brand.nws', 'image_brand.non_nws', 'image_brand.no_branding']
+    image_names = ['image_type.two', 'image_type.cone', 'image_type.arrival', 'image_type.prob', 'image_type.spag',
+                   'image_type.wind', 'image_type.surge', 'image_type.info', 'image_type.ww', 'image_type.ti',
+                   'image_type.conv', 'image_type.rain', 'image_type.sat', 'image_type.radar', 'image_type.adv',
+                   'image_type.env', 'image_type.text', 'image_type.model', 'image_type.orisk', 'image_type.onon']
+    for col in (brand_names + image_names):
+        df[col] = df[col].map({'yes': 1, 'no': 0})
+
+    # Count the number of image branding and type codes applied
+    df['brand_count'] = df[brand_names].sum(axis=1)
+    df['image_count'] = df[image_names].sum(axis=1)
+
+    # Manually define multiple columns
+    df[['brand_mult', 'image_mult']] = 0
+    df.loc[df['brand_count'] > 1, 'brand_mult'] = 1
+    df.loc[df['image_count'] > 1, 'image_mult'] = 1
+
+    # Create combined image branding & type code columns
+    df['brand_join'] = df.apply(lambda row: join_vals(row, brand_names, 1, 12), axis=1)
+    df['image_join'] = df.apply(lambda row: join_vals(row, image_names, 1, 11), axis=1)
+
+    # Create mutually exclusive image branding & type code columns
+    df['image.brand'] = df[brand_names].idxmax(axis=1).str[12:]
+    df.loc[df['brand_count'] > 1, 'image.brand'] = 'multiple'
+
+    df['image.type'] = df[image_names].idxmax(axis=1).str[11:]
+    df.loc[df['image_count'] > 1, 'image.type'] = 'multiple'
+
+    # Create image branding/type crosstab codes
+    df['image.brand_type'] = df['image.brand'] + '_' + df['image.type']
+
+    return df
+
+
+def merge_coding(filter_dfs, haz_risk_dfs, image_dfs, raw_df):
     """
     Merge uncoded data from Twitter API with data coded by research team
 
     Parameters:
         filter_dfs: A list of Irma filter-coded dataframes to concatenate
         haz_risk_dfs: A list of Irma hazard and risk information-coded dataframes to concatenate
+        image_dfs: A list of Irma image-coded dataframes to concatenate
         raw_df: A dataframe with the original data pulled from the API, to merge coded data with
 
     Returns:
@@ -148,6 +197,12 @@ def merge_coding(filter_dfs, haz_risk_dfs, raw_df):
     # Format hazard & risk codes/columns
     irma_haz_risk = haz_risk_format(irma_haz_risk)
 
+    # Concatenate image coded data together
+    irma_ic = pd.concat(image_dfs, join='outer')
+
+    # Format image codes/columns
+    irma_ic = image_format(irma_ic)
+
     # Drop unnecessary columns
     for col in raw_df.columns:
         if col[:7] == 'Unnamed':
@@ -157,20 +212,25 @@ def merge_coding(filter_dfs, haz_risk_dfs, raw_df):
         if col[:7] == 'Unnamed':
             irma_filter.drop(col, axis=1, inplace=True)
 
-    # Merge hazard and risk coded data with filter coded data
-    merged1 = pd.merge(irma_filter, irma_haz_risk, how='left', on='tweet-url', suffixes=('', '_y'))
+    # Merge image coded data with hazard & risk coded data
+    merged1 = pd.merge(irma_haz_risk, irma_ic, how='left', on='tweet-url', suffixes=('', '_y'))
     merged1.drop(merged1.filter(regex='_y$').columns.tolist(), axis=1, inplace=True)
     merged1['id'] = merged1['tweet-url'].str[-18:]
 
-    # Merge coded data with uncoded raw data
-    merged2 = pd.merge(raw_df, merged1, how='left', on='tweet-url', suffixes=('', '_y'))
+    # Merge the merged image & hazard/risk coded data with filter coded data
+    merged2 = pd.merge(irma_filter, merged1, how='left', on='tweet-url', suffixes=('', '_y'))
     merged2.drop(merged2.filter(regex='_y$').columns.tolist(), axis=1, inplace=True)
     merged2['id'] = merged2['tweet-url'].str[-18:]
 
-    # Remove unaccessable tweets from Steve Jerve (@sjervewfla)
-    merged2 = merged2[merged2['user.username'] != 'sjervewfla']
+    # Merge coded data with uncoded raw data
+    merged3 = pd.merge(raw_df, merged2, how='left', on='tweet-url', suffixes=('', '_y'))
+    merged3.drop(merged3.filter(regex='_y$').columns.tolist(), axis=1, inplace=True)
+    merged3['id'] = merged3['tweet-url'].str[-18:]
 
-    return merged2
+    # Remove unaccessable tweets from Steve Jerve (@sjervewfla)
+    merged3 = merged3[merged3['user.username'] != 'sjervewfla']
+
+    return merged3
 
 
 def text_format(df):
@@ -250,6 +310,10 @@ def bot_coding(df):
 
     # Coding non-bot tweets
     df.loc[df['bot_tweet'] != 1, 'bot_tweet'] = 0
+
+    # Convert 1/0 code to Yes/No
+    df.loc[df['bot_tweet'] == 1, 'bot_tweet'] = 'Yes'
+    df.loc[df['bot_tweet'] == 0, 'bot_tweet'] = 'No'
 
     return df
 
@@ -489,8 +553,8 @@ def readdata(how, save=True):
 
         filter_to_rename = ['Final', 'Final.1', 'Final.2']
         filter_new_names = ['deleted_qt', 'relevant', 'spanish']
-        irma_coded_icr = google_coded_format('Irma\\Data\\Filter Coding\\irma_coded_icr.csv', filter_to_rename,
-                                             filter_new_names, 1)
+        irma_coded_icr = coded_format('Irma\\Data\\Filter Coding\\irma_coded_icr.csv', filter_to_rename,
+                                      filter_new_names, 1)
         filter_coded = [irma_coded_robert, irma_coded_tbd, irma_coded_alyssa, irma_coded_icr, irma_coded_new]
 
         # Read in and format hazard and risk coded data
@@ -503,17 +567,38 @@ def readdata(how, save=True):
         haz_names = ['hazard_tc', 'hazard_surge', 'hazard_rain_flood', 'hazard_convective', 'hazard_mult',
                      'hazard_other']
         risk_names = ['risk_non_ww_fore', 'risk_ww_fore', 'risk_obs', 'risk_past', 'risk_mult', 'risk_other']
-        irma_haz_risk_icr = google_coded_format('Irma\\Data\\Content Coding - Phase 1\\irma_icr_coded.csv',
-                                                icr_to_rename, haz_names + risk_names, 2)
-        irma_haz_risk_bot = google_coded_format('Irma\\Data\\Content Coding - Phase 1\\irma_bot_coded.csv',
-                                                bot_to_rename, haz_names + risk_names, 2)
-        irma_haz_risk_coded = google_coded_format('Irma\\Data\\Content Coding - Phase 1\\irma_rel_coded.csv',
-                                                  coded_to_rename, haz_names + risk_names, 0)
+        irma_haz_risk_icr = coded_format('Irma\\Data\\Content Coding - Phase 1\\irma_icr_coded.csv',
+                                         icr_to_rename, haz_names + risk_names, 2)
+        irma_haz_risk_bot = coded_format('Irma\\Data\\Content Coding - Phase 1\\irma_bot_coded.csv',
+                                         bot_to_rename, haz_names + risk_names, 2)
+        irma_haz_risk_coded = coded_format('Irma\\Data\\Content Coding - Phase 1\\irma_rel_coded.csv',
+                                           coded_to_rename, haz_names + risk_names, 0)
         haz_risk_coded = [irma_haz_risk_icr, irma_haz_risk_bot, irma_haz_risk_coded]
+
+        # Read in and format image coded data
+        icr_to_rename = ['Final', 'Final.1', 'Final.2', 'Final.3', 'Final.4', 'Final.5', 'Final.6', 'Final.7',
+                         'Final.8', 'Final.9', 'Final.10', 'Final.11', 'Final.12', 'Final.13', 'Final.14', 'Final.15',
+                         'Final.16', 'Final.17', 'Final.18', 'Final.19', 'Final.20', 'Final.21', 'Final.22']
+        bot_to_rename = ['NWS', 'Non-NWS', 'No Branding', 'TWO', 'Cone', 'Arrival', 'Prob', 'Spag', 'Wind', 'Surge.1',
+                         'Info', 'WW', 'TI', 'Conv', 'Rain', 'Sat', 'Radar', 'Adv', 'Env', 'Text', 'Model', 'ORisk',
+                         'ONon']
+        image_names = ['image_brand.nws', 'image_brand.non_nws', 'image_brand.no_branding', 'image_type.two',
+                       'image_type.cone', 'image_type.arrival', 'image_type.prob', 'image_type.spag', 'image_type.wind',
+                       'image_type.surge', 'image_type.info', 'image_type.ww', 'image_type.ti', 'image_type.conv',
+                       'image_type.rain', 'image_type.sat', 'image_type.radar', 'image_type.adv', 'image_type.env',
+                       'image_type.text', 'image_type.model', 'image_type.orisk', 'image_type.onon']
+        irma_ic_icr = coded_format('Irma\\Data\\Image Coding\\irma_ic_icr_coded.csv',
+                                   icr_to_rename, image_names, 2)
+        irma_ic_bot = coded_format('Irma\\Data\\Image Coding\\irma_ic_bot_coded.csv',
+                                   bot_to_rename, image_names, 2)
+        irma_ic_coded = coded_format('Irma\\Data\\Image Coding\\irma_ic_coded_edited.csv',
+                                     image_names, image_names, 0)
+        image_coded = [irma_ic_icr, irma_ic_bot, irma_ic_coded]
 
         # Merge data sources together
         print('Merging data sources...')
-        irma_tweets = merge_coding(filter_dfs=filter_coded, haz_risk_dfs=haz_risk_coded, raw_df=irma_api)
+        irma_tweets = merge_coding(filter_dfs=filter_coded, haz_risk_dfs=haz_risk_coded, image_dfs=image_coded,
+                                   raw_df=irma_api)
 
         # Format merged data
         print('Formatting merged data...')
@@ -600,12 +685,16 @@ def readdata(how, save=True):
         irma_tweets['created_at_date6h'] = pd.to_datetime(irma_tweets['created_at_date6h'])
         irma_tweets['id'] = irma_tweets['tweet-url'].str[-18:]
 
+        for col in irma_tweets.columns:
+            if col[:7] == 'Unnamed':
+                irma_tweets = irma_tweets.drop(col, axis=1)
+
     else:
         irma_tweets = None
 
     # Save data, if desired
     if save is True:
-        irma_tweets.to_csv('irma_tweets_test.csv')
+        irma_tweets.to_csv('irma_tweets.csv')
 
     return irma_tweets
 
@@ -618,6 +707,12 @@ def count_diff(df, ref, strat, **kwargs):
         df: A Pandas datframe of processed Twitter data
         ref: Reference group (string) to be used in title of plot (e.g. relevant or original tweets)
         strat: Which column to use to stratify the timing data (e.g. date or hour_3h)
+
+    Returns:
+        None
+
+    Outputs:
+        A matplotlib plot object, shown and/or saved
     """
     # Create a figure with two subplots
     fig, axes = plt.subplots(2, 1)
@@ -687,6 +782,102 @@ def count_diff(df, ref, strat, **kwargs):
     plt.tight_layout()
     fig.savefig(ref + '_' + strat + 'by_' + split + '_count_rt.png', dpi=300, bbox_inches='tight')
     plt.show()
+
+
+def diff_bar(df, ref, engage, col, diff_agg, val_dict, title, file_title, save=False, show=True, **kwargs):
+    """
+    Create a plot of tweet diffusion metrics aggregated over a user-provided categorical variable
+
+    Parameters:
+        df: A Pandas datframe of processed Twitter data
+        ref: Reference group (string) that diffusion statistics are calculated over (rel or orig). Must match values in
+                 diffusion columns. Also used in title of plot.
+        engage: Name (string) of engagement statistic/metric to use (e.g. 'retweet')
+        col: Name (string) of column storing categorical variables to aggregate over (e.g. 'hazard')
+        diff_agg: Type (string) of engagement statistic (e.g. 'Z', 'Diff')
+        val_dict: Dictionary mapping values within categorical column to display values
+        title: Long/formatted description of categorical variable for figure title (e.g. 'Media Type')
+        file_title: Short description of categorical variable for file name (e.g. 'media')
+        save: Whether to save the figure output (default False)
+        show: Whether to show the figure output (default True)
+
+    Optional Keyword Arguments:
+        palette: Dictionary mapping values within categorical column to color values to display
+
+    Returns:
+        None
+
+    Outputs:
+        A matploblib figure object, to be saved or shown
+    """
+    # Set variables based on diffusion aggregation type
+    if diff_agg == 'Z':
+        base = 0
+        est = np.mean
+        diff_label = 'Mean source-adjusted ' + engage + ' Z score'
+        diff_col = ref + '_source_' + engage + diff_agg
+        print(df.groupby(col)[diff_col].mean())
+        order = df.groupby(col)[diff_col].mean().sort_values().iloc[::-1].index
+    elif diff_agg == 'Diff':
+        base = 0
+        est = np.median
+        diff_label = 'Median ' + engage + ' difference from source mean'
+        diff_col = ref + '_source_raw_' + engage + '_diff'
+        print(df.groupby(col)[diff_col].median())
+        order = df.groupby(col)[diff_col].median().sort_values().iloc[::-1].index
+    elif diff_agg == 'Per':
+        base = 100
+        est = np.median
+        diff_label = 'Median % of source mean ' + engage
+        diff_col = ref + '_source_raw_' + engage + '_per'
+        print(df.groupby(col)[diff_col].median())
+        order = df.groupby(col)[diff_col].median().sort_values().iloc[::-1].index
+    elif diff_agg == 'Foll':
+        base = df[ref + '_follower_' + engage].median()
+        est = np.median
+        diff_label = 'Median follower-normalized ' + engage + 's (' + engage + 's/10k followers)'
+        diff_col = ref + '_follower_' + engage
+        print(df.groupby(col)[diff_col].median())
+        order = df.groupby(col)[diff_col].median().sort_values().iloc[::-1].index
+    else:
+        print('diff_agg value is not valid. Please select from one of ["Z", "Diff", "Per", "Foll"]')
+        order = []
+        diff_col = ''
+        est = np.mean
+        diff_label = ''
+        base = 0
+
+    # Obtain palette dictionary, if provided
+    palette = kwargs.get('palette', None)
+
+    # Obtain labels from dictionary
+    labels = [val_dict[k] for k in order]
+
+    # Obtain colors from dictionary, if provided. Otherwise use Seaborn default color scheme
+    if palette is not None:
+        colors = [palette[m] for m in order]
+    else:
+        colors = sns.color_palette('hls')
+
+    # Plot and format
+    fig, ax = plt.subplots(figsize=[8, 8])
+
+    ax = sns.barplot(data=df, x=diff_col, y=col, estimator=est, order=order, capsize=.2, edgecolor='black',
+                     palette=colors)
+    ax.set_yticklabels(labels, fontsize=14)
+    ax.set_xlabel(diff_label, labelpad=10, fontsize=14)
+    ax.set_ylabel(None)
+    # ax.set_xlim(-0.75, 0.75)
+    ax.axvline(base, color='black')
+    ax.set_title(title + ' - ' + ref, fontsize=16)
+
+    # Save and/or show
+    if save is True:
+        fig.savefig('Irma\\Visualizations\\Relevant Tweet Analysis\\Diff Norm Examples\\' + ref + '_' + file_title +
+                    '_bar_' + engage + diff_agg + '.png', dpi=300, bbox_inches='tight')
+
+    if show is True:
+        plt.show()
 
 
 def diff_calcs(df, ref, engage_type):
